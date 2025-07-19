@@ -18,34 +18,33 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
     if (event_base == WIFI_EVENT) {
         switch (event_id) {
             case WIFI_EVENT_STA_START:
-                ESP_LOGI(TAG, "wifi_event_handler ==> WiFi station started");
+                ESP_LOGI(TAG, "WiFi station started - connecting to SSID: %s", WIFI_SSID);
                 esp_wifi_connect();
                 break;
             case WIFI_EVENT_STA_CONNECTED:
-                ESP_LOGI(TAG, "wifi_event_handler ==> Connected to AP");
+                ESP_LOGI(TAG, "Successfully connected to WiFi network: %s", WIFI_SSID);
                 break;
             case WIFI_EVENT_STA_DISCONNECTED:
-                ESP_LOGW(TAG, "wifi_event_handler ==> Disconnected from AP - attempting reconnection");
+                ESP_LOGW(TAG, "Disconnected from WiFi network: %s - attempting reconnection", WIFI_SSID);
                 vTaskDelay(pdMS_TO_TICKS(WIFI_RECONNECT_DELAY_MS));
                 esp_wifi_connect();
                 break;
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        if (event_base == IP_EVENT) {
-          ESP_LOGI(TAG, "wifi_event_handler ==> event_base == IP_EVENT");
-        }
-        if (event_base == IP_EVENT_STA_GOT_IP) {
-          ESP_LOGI(TAG, "wifi_event_handler ==> event_base == IP_EVENT_STA_GOT_IP");
-        }
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "=== WiFi Connection Successful ===");
+        ESP_LOGI(TAG, "SSID: %s", WIFI_SSID);
+        ESP_LOGI(TAG, "IP Address: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Netmask: " IPSTR, IP2STR(&event->ip_info.netmask));
+        ESP_LOGI(TAG, "Gateway: " IPSTR, IP2STR(&event->ip_info.gw));
+        ESP_LOGI(TAG, "Web Server: http://" IPSTR "/", IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "================================");
     }
-
-    ESP_LOGI(TAG, "wifi_event_handler ==> LEAVING ");
 }
 
 static void wifi_init_sta(void) {
     ESP_LOGI(TAG, "=== WiFi Station Initialization Starting ===");
+    ESP_LOGI(TAG, "Target SSID: %s", WIFI_SSID);
     
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -77,7 +76,10 @@ static void wifi_init_sta(void) {
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(12));
+    
+    ESP_LOGI(TAG, "WiFi initialization complete - waiting for connection...");
 }
+
 void network_task(void *pvParameters) {
     // Register this task with the watchdog
     ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
@@ -130,7 +132,10 @@ void network_task(void *pvParameters) {
         httpd_register_uri_handler(server, &uri_status);
         httpd_register_uri_handler(server, &uri_hardware);
 
-        ESP_LOGI(TAG, "Web server started successfully");
+        ESP_LOGI(TAG, "Web server started successfully on port 80");
+        ESP_LOGI(TAG, "Available endpoints: /, /capture, /stream, /status, /hardware");
+    } else {
+        ESP_LOGE(TAG, "Failed to start web server!");
     }
 
     while(1) {
