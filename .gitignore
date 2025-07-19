@@ -1,3 +1,8 @@
+build/*
+build/
+
+sdkconfig.old
+
 # Prerequisites
 *.d
 
@@ -50,3 +55,15 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# ESP-IDF Component Manager
+components/
+managed_components/
+dependencies.lock
+
+# ESP-IDF build system
+sdkconfig.old
+
+# IDE files
+.vscode/
+.idea/
