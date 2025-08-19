@@ -4,6 +4,8 @@ build/
 sdkconfig.old
 sdkconfig.local
 
+*.priv
+
 # Prerequisites
 *.d
 

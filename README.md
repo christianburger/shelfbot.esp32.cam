@@ -4,6 +4,14 @@
 
 ---
 
+## Current Status (Work in Progress)
+
+This project is in a stable, transitional phase. The firmware currently runs both the legacy **web server** and the new **micro-ROS node** simultaneously. The micro-ROS node connects reliably to the agent, but the core functionality (publishing images) is not yet implemented.
+
+The final goal is to decommission the web server and create a pure, high-performance micro-ROS camera node.
+
+---
+
 ## Setup and Build
 
 This project requires a one-time setup of the Micro-ROS build system within the ESP-IDF environment.
@@ -23,15 +31,9 @@ This project requires a one-time setup of the Micro-ROS build system within the 
     ```
 
 3.  **Configure the Project:**
-    Run the ESP-IDF configuration menu.
-    ```bash
-    idf.py menuconfig
-    ```
-    Navigate to `Component config` ---> `Micro ROS configuration` and set the following:
-    - **Transport:** `Use WiFi for micro-ROS transport`
-    - **Agent Hostname:** `shelfbot.camera.local` (or the IP of your agent)
-    - **Agent Port:** `8888`
-    - **WiFi SSID & Password:** Under the `WiFi Configuration` submenu.
+    Project configuration is currently managed in source files:
+    - **WiFi Credentials:** Set your SSID and password in `main/network_manager.h`.
+    - **micro-ROS Agent:** The agent is discovered automatically via an mDNS query for the hostname `gentoo-laptop.local`. This can be changed in `components/shelfbot_camera/shelfbot_camera.c`.
 
 4.  **Build and Flash:**
     The first build will take a significant amount of time as it compiles the entire Micro-ROS library from source. Subsequent builds will be much faster.
@@ -42,28 +44,28 @@ This project requires a one-time setup of the Micro-ROS build system within the 
 
 ---
 
-## Micro-ROS Interface
+## Micro-ROS Interface (Under Development)
 
-The firmware exposes the following ROS 2 topics:
+The firmware exposes the following ROS 2 topics.
 
 ### Publishers
 
 -   **Compressed Image Publisher:**
     -   **Topic:** `/camera/image_raw/compressed`
     -   **Message Type:** `sensor_msgs/msg/CompressedImage`
-    -   **Purpose:** The primary output of the camera, publishing JPEG frames.
+    -   **Status:** **(Not Yet Implemented)** The publisher is created, but no image data is being published to this topic yet.
 
 -   **Camera Info Publisher:**
     -   **Topic:** `/camera/camera_info`
     -   **Message Type:** `sensor_msgs/msg/CameraInfo`
-    -   **Purpose:** Publishes camera calibration data. (Currently uses placeholder values).
+    -   **Status:** Active. Publishes placeholder data periodically.
 
 ### Subscribers
 
 -   **LED Control Subscriber:**
     -   **Topic:** `/camera/led`
     -   **Message Type:** `std_msgs/msg/Bool`
-    -   **Purpose:** Toggles the onboard LED flash.
+    -   **Status:** **(Not Yet Implemented)** The subscriber is created, but the callback function is a placeholder.
 
 ---
 
@@ -72,19 +74,21 @@ The firmware exposes the following ROS 2 topics:
 To use this firmware, you must have a Micro-ROS agent running on your host computer.
 
 1.  **Start the Micro-ROS Agent:**
-    Run the agent in a ROS 2 environment, configured for UDP communication on port 8888.
+    Run the agent in a ROS 2 environment, configured for UDP communication on port 8888. Your host computer must be discoverable via mDNS with the hostname `gentoo-laptop`.
     ```bash
     docker run -it --rm -v /dev:/dev -v /dev/shm:/dev/shm --privileged --net=host microros/micro-ros-agent:humble udp4 --port 8888
     ```
 
 2.  **Verify Connection:**
-    Monitor the ESP32's serial output. It should connect to your WiFi and then successfully connect to the agent.
+    Monitor the ESP32's serial output. It should connect to your WiFi, discover the agent via mDNS, and print `Micro-ROS initialized successfully`. The agent's console will also show a client connection.
 
 3.  **Verify ROS 2 Topics:**
-    In a separate terminal with your ROS 2 environment sourced, check the topics.
+    In a separate terminal with your ROS 2 environment sourced, you can see the node and its topics.
     -   **List topics:** `ros2 topic list`
-    -   **View image stream:** `ros2 run rqt_image_view rqt_image_view` and select the `/camera/image_raw/compressed` topic.
-    -   **Test LED control:** `ros2 topic pub /camera/led std_msgs/msg/Bool "data: true"`
+    -   **Echo camera info:** `ros2 topic echo /camera/camera_info`
+
+4.  **Access Legacy Web Server:**
+    For a visual confirmation that the camera is working, you can access the legacy web server by navigating to the ESP32's IP address in a web browser. The video stream is available at `http://<ESP32_IP>/stream`.
 
 ---
 
