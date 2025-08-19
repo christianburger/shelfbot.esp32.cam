@@ -1,53 +1,99 @@
-# ESP32 Camera Web Server
+# Micro-ROS ESP32 Camera Node
 
-A high-performance camera streaming solution using ESP32 with integrated web server capabilities.
+**Objective:** A native Micro-ROS node for the ESP32-CAM, designed to publish compressed images directly into a ROS 2 ecosystem. This firmware makes the ESP32-CAM a first-class sensor for robotics projects.
 
-## Setup from Scratch (with Micro-ROS)
+---
 
-This project requires a manual setup for the Micro-ROS component.
+## Setup and Build
+
+This project requires a one-time setup of the Micro-ROS build system within the ESP-IDF environment.
 
 1.  **Clone the Project:**
+    Clone this repository and its submodules. The `--recursive` flag is essential.
     ```bash
-    git clone <repository_url>
+    git clone --recursive <repository_url>
     cd shelfbot.esp32.cam
     ```
 
-2.  **Install Micro-ROS Component:**
-    Clone the `micro_ros_espidf_component` into the `components` directory.
-    ```bash
-    git clone https://github.com/micro-ROS/micro_ros_espidf_component.git components/micro_ros_espidf_component
-    ```
-
-3.  **Install Build Dependencies:**
-    Source your ESP-IDF environment and then install the required Python packages. This is a one-time setup for the environment.
+2.  **Install Build Dependencies:**
+    Source your ESP-IDF environment script, then use `pip` to install the necessary ROS 2 build tools into the IDF's local Python environment.
     ```bash
     . /path/to/your/esp-idf/export.sh
     pip3 install catkin_pkg lark-parser colcon-common-extensions
     ```
 
-4.  **Build the Project:**
-    You can now build the project. The first build will take a long time as it compiles the Micro-ROS library from scratch.
+3.  **Configure the Project:**
+    Run the ESP-IDF configuration menu.
+    ```bash
+    idf.py menuconfig
+    ```
+    Navigate to `Component config` ---> `Micro ROS configuration` and set the following:
+    - **Transport:** `Use WiFi for micro-ROS transport`
+    - **Agent Hostname:** `shelfbot.camera.local` (or the IP of your agent)
+    - **Agent Port:** `8888`
+    - **WiFi SSID & Password:** Under the `WiFi Configuration` submenu.
+
+4.  **Build and Flash:**
+    The first build will take a significant amount of time as it compiles the entire Micro-ROS library from source. Subsequent builds will be much faster.
     ```bash
     idf.py build
+    idf.py flash monitor
     ```
+
+---
+
+## Micro-ROS Interface
+
+The firmware exposes the following ROS 2 topics:
+
+### Publishers
+
+-   **Compressed Image Publisher:**
+    -   **Topic:** `/camera/image_raw/compressed`
+    -   **Message Type:** `sensor_msgs/msg/CompressedImage`
+    -   **Purpose:** The primary output of the camera, publishing JPEG frames.
+
+-   **Camera Info Publisher:**
+    -   **Topic:** `/camera/camera_info`
+    -   **Message Type:** `sensor_msgs/msg/CameraInfo`
+    -   **Purpose:** Publishes camera calibration data. (Currently uses placeholder values).
+
+### Subscribers
+
+-   **LED Control Subscriber:**
+    -   **Topic:** `/camera/led`
+    -   **Message Type:** `std_msgs/msg/Bool`
+    -   **Purpose:** Toggles the onboard LED flash.
+
+---
+
+## Testing and Validation
+
+To use this firmware, you must have a Micro-ROS agent running on your host computer.
+
+1.  **Start the Micro-ROS Agent:**
+    Run the agent in a ROS 2 environment, configured for UDP communication on port 8888.
+    ```bash
+    docker run -it --rm -v /dev:/dev -v /dev/shm:/dev/shm --privileged --net=host microros/micro-ros-agent:humble udp4 --port 8888
+    ```
+
+2.  **Verify Connection:**
+    Monitor the ESP32's serial output. It should connect to your WiFi and then successfully connect to the agent.
+
+3.  **Verify ROS 2 Topics:**
+    In a separate terminal with your ROS 2 environment sourced, check the topics.
+    -   **List topics:** `ros2 topic list`
+    -   **View image stream:** `ros2 run rqt_image_view rqt_image_view` and select the `/camera/image_raw/compressed` topic.
+    -   **Test LED control:** `ros2 topic pub /camera/led std_msgs/msg/Bool "data: true"`
+
+---
 
 ## Hardware Support
 
 ### Supported Camera Modules
-- OV2640 (Primary - configured in main.c)
-- OV7670, OV7725, NT99141
-- OV3660, OV5640
-- GC2145, GC032A, GC0308
-- BF3005, BF20A6
-- SC030IOT
-- MEGA_CCM
-
-### Camera Configuration
-- **Resolution**: SVGA (800x600)
-- **Format**: JPEG
-- **Quality**: 12 (configurable)
-- **Frame Buffer**: 1 buffer
-- **XCLK Frequency**: 20MHz
+- OV2640 (Primary)
+- OV7670, OV7725, NT99141, OV3660, OV5640
+- GC2145, GC032A, GC0308, BF3005, BF20A6, SC030IOT
 
 ### Pin Configuration (ESP32-CAM)
 ```c
@@ -60,140 +106,3 @@ Data 7:      GPIO35    |  HREF:       GPIO23
 Data 6:      GPIO34    |  PCLK:       GPIO22
 Data 5:      GPIO39    |  Data 2:     GPIO19
 ```
-
-## Web Server Features
-
-The server runs on ESP32's WiFi in station mode with the following endpoints:
-
-### HTTP Endpoints
-
-#### Root (`GET /`)
-- Main navigation interface
-- Links to all available functions
-- Basic system status
-
-#### Capture (`GET /capture`)
-- Single frame capture
-- Returns JPEG image
-- Content-Type: image/jpeg
-- Inline display capability
-
-#### Stream (`GET /stream`)
-- Real-time MJPEG video stream
-- Multipart content type: `multipart/x-mixed-replace`
-- Continuous frame delivery
-- Boundary: `123456789000000000000987654321`
-
-#### Status (`GET /status`)
-- System telemetry in JSON format
-- Heap memory usage
-- Active task count  
-- CPU frequency
-
-#### Hardware Info (`GET /hardware`)
-- Hardware information in JSON format
-- PSRAM size and features
-- Chip capabilities (WiFi, BT, BLE)
-- Core count and revision
-
-## Technical Architecture
-
-### Task Distribution
-- **Network Task**: Core 1, Priority `configMAX_PRIORITIES - 1`
-- **Camera Task**: Core 0, Priority `configMAX_PRIORITIES - 2`
-- **Frame Processing**: Core 0, Priority `configMAX_PRIORITIES - 3` (disabled)
-
-### Memory Management
-- **Frame Queue**: 2 frame buffers
-- **JPEG Compression**: Quality 12
-- **SVGA Resolution**: 800x600
-- **Stack Sizes**: 8192 bytes for camera/processing tasks
-
-### Network Configuration
-- **WiFi Mode**: Station (STA)
-- **HTTP Server**: Multiple socket support (max 2)
-- **LRU Cache**: Enabled for connections
-- **Task Watchdog**: Enabled with monitoring
-
-## Configuration
-
-### WiFi Settings
-Update in `main/network_manager.h`:
-```c
-#define WIFI_SSID "your-wifi-name"
-#define WIFI_PASS "your-wifi-password"
-```
-
-### Camera Settings
-Modify in `main/main.c`:
-```c
-.frame_size = FRAMESIZE_SVGA,    // Resolution
-.jpeg_quality = 12,              // Quality (10-63)
-.fb_count = 1                    // Frame buffers
-```
-
-## Build and Flash
-
-### Prerequisites
-- ESP-IDF v5.5.0
-- ESP32 with PSRAM enabled
-- Camera module (OV2640 recommended)
-
-### Build Commands
-```bash
-# Configure project
-idf.py menuconfig
-
-# Build project
-idf.py build
-
-# Flash to device
-idf.py flash monitor
-```
-
-### Required Components
-- esp32-camera (auto-installed via component manager)
-- esp_http_server
-- esp_wifi
-- freertos
-
-## Usage
-
-1. **Connect to WiFi**: Device connects to configured network
-2. **Find IP Address**: Check serial monitor for assigned IP
-3. **Access Web Interface**: Open `http://[ESP32-IP]/` in browser
-4. **Take Photos**: Click "Take Photo" for single capture
-5. **Start Stream**: Click "Start Stream" for live video
-
-## Performance Considerations
-
-- **JPEG Quality**: Set to 12 for optimal size/quality ratio
-- **Task Priorities**: Network task has highest priority
-- **Core Pinning**: Camera operations on Core 0, Network on Core 1
-- **Watchdog Protection**: Enabled for all tasks
-- **PSRAM**: Required for frame buffering
-- **WiFi Power**: Set to maximum (12dBm) for stable connection
-
-## Troubleshooting
-
-### Common Issues
-1. **Camera Init Failed**: Check pin connections and power supply
-2. **WiFi Connection Failed**: Verify SSID/password in network_manager.h
-3. **Out of Memory**: Ensure PSRAM is enabled in menuconfig
-4. **Slow Streaming**: Reduce JPEG quality or frame size
-
-### Debug Options
-- Enable verbose logging in menuconfig
-- Monitor serial output with `idf.py monitor`
-- Check heap usage via `/status` endpoint
-
-## Hardware Requirements
-
-- **ESP32** with external PSRAM
-- **Camera Module** (OV2640 recommended)
-- **Power Supply**: 5V/2A minimum
-- **WiFi Network**: 2.4GHz support required
-
-## License
-
-This project uses ESP-IDF framework and esp32-camera component.
