@@ -1,6 +1,6 @@
-# Plan: ESP32-CAM Firmware Conversion to Micro-ROS
+# Plan: ESP32-CAM Hybrid Web Server & Micro-ROS Firmware
 
-**Objective:** Convert the existing web server-based ESP32-CAM firmware into a native Micro-ROS node. This will enable the camera to publish images directly into the ROS 2 ecosystem, making it a first-class sensor for the Shelfbot project.
+**Objective:** Augment the existing web server-based ESP32-CAM firmware with a native Micro-ROS node. This will enable the camera to publish images directly into the ROS 2 ecosystem while retaining the web interface for diagnostics and direct access.
 
 ---
 
@@ -10,87 +10,72 @@
 
 1.  **Install Micro-ROS Build System:**
     *   Follow the official Micro-ROS documentation to install the `micro_ros_setup` tool.
-    *   Use this tool to download the necessary Micro-ROS libraries and build scripts into the ESP-IDF project. This is typically done by running a command like `ros2 run micro_ros_setup create_firmware_ws.sh freertos esp-idf`.
+    *   Use this tool to download the necessary Micro-ROS libraries and build scripts into the ESP-IDF project.
 
 2.  **Configure Project:**
-    *   Run `idf.py menuconfig`.
-    *   Navigate to the "Micro-ROS" component settings.
-    *   Configure the Wi-Fi SSID and password for the ESP32 to connect to.
-    *   Configure the IP address and port of the computer running the Micro-ROS Agent.
-    *   Ensure PSRAM support is enabled, as this is critical for camera frame buffers.
+    *   Ensure PSRAM support is enabled in `idf.py menuconfig`, as this is critical for camera frame buffers.
+    *   WiFi credentials are set in `main/network_manager.h`.
+    *   The micro-ROS agent is discovered via mDNS.
 
 3.  **Update `CMakeLists.txt`:**
-    *   Modify the main `CMakeLists.txt` to add `micro_ros_common` as a required component. This will ensure the Micro-ROS libraries are correctly linked during the build.
+    *   Modify the component `CMakeLists.txt` files to ensure all necessary dependencies (like `main`, `espressif__mdns`, etc.) are available to the components that require them.
 
 ---
 
-### Phase 2: Code Refactoring - From Web Server to Micro-ROS
+### Phase 2: Code Refactoring - Hybrid Integration
 
-**Goal:** Remove the existing web server and replace its functionality with a Micro-ROS node, publishers, and subscribers.
+**Goal:** Run the micro-ROS node concurrently with the existing web server, sharing a single network connection.
 
-1.  **Remove Web Server Code:**
-    *   Delete `network_manager.c` and `controller.c`. These files are entirely related to the HTTP server.
-    *   Update `main.c` to remove all calls to `network_task` and any HTTP-related initializations.
+1.  **Create Standalone micro-ROS Component:**
+    *   Encapsulate all micro-ROS logic into a new component (`shelfbot_camera`).
+    *   This component will contain the task that initializes the node, publishers, and subscribers.
 
-2.  **Implement Micro-ROS Node in `main.c`:**
-    *   Add the necessary Micro-ROS headers.
-    *   In the `app_main` function, initialize the Micro-ROS node, executor, and transport layer (configured for Wi-Fi).
-    *   Create a main application loop that spins the Micro-ROS executor (`rclc_executor_spin_some`).
+2.  **Synchronize Task Startup:**
+    *   The main `network_task` remains in control of the WiFi connection and mDNS service initialization.
+    *   Use a FreeRTOS Event Group to signal the status of the network connection.
+    *   The `shelfbot_camera_task` will wait on this event group to ensure both WiFi is connected and the mDNS service is started before it attempts to discover and connect to the micro-ROS agent.
 
 3.  **Define the Micro-ROS Communication Interface:**
     *   **Publishers:**
-        *   **Compressed Image Publisher:**
-            *   **Topic:** `/camera/image_raw/compressed`
-            *   **Message Type:** `sensor_msgs/msg/CompressedImage`
-            *   **Purpose:** This will be the primary output of the camera, publishing the JPEG frames captured by the sensor.
-        *   **Camera Info Publisher:**
-            *   **Topic:** `/camera/camera_info`
-            *   **Message Type:** `sensor_msgs/msg/CameraInfo`
-            *   **Purpose:** Publishes the camera's calibration data (focal length, distortion, etc.). This is essential for many ROS perception nodes, including VSLAM. Initially, this can be populated with placeholder values.
+        *   **Compressed Image Publisher:** `/camera/image_raw/compressed` (`sensor_msgs/msg/CompressedImage`)
+        *   **Camera Info Publisher:** `/camera/camera_info` (`sensor_msgs/msg/CameraInfo`)
     *   **Subscribers:**
-        *   **LED Control Subscriber:**
-            *   **Topic:** `/camera/led`
-            *   **Message Type:** `std_msgs/msg/Bool`
-            *   **Purpose:** A simple subscriber to allow the main robot to turn the ESP32-CAM's onboard LED (flash) on or off for illumination. This is a useful debugging and control feature.
+        *   **LED Control Subscriber:** `/camera/led` (`std_msgs/msg/Bool`)
 
 ---
 
-### Phase 3: Camera Integration & Publishing
+### Phase 3: Camera Integration & Dual Publishing
 
-**Goal:** Modify the existing camera task to publish frames via Micro-ROS instead of sending them to the web server.
+**Goal:** Modify the camera task to publish frames to both the web server and Micro-ROS.
 
 1.  **Modify `camera_task`:**
-    *   Remove the use of `xQueueSend` to pass the frame buffer (`pic`).
-    *   After a frame is captured (`pic = esp_camera_fb_get()`), directly use its data to populate a `sensor_msgs__msg__CompressedImage` message.
-        *   The `message->data` field will be populated from `pic->buf`.
-        *   The `message->data.size` will be set to `pic->len`.
-        *   The `message->format` will be set to `"jpeg"`.
-    *   Use `rcl_publish()` to send the compressed image message.
-    *   Return the frame buffer using `esp_camera_fb_return(pic)`.
+    *   After a frame is captured, the task will perform two actions:
+    *   **1. Publish to Micro-ROS:** Populate a `sensor_msgs__msg__CompressedImage` message with the frame data and use `rcl_publish()` to send it.
+    *   **2. Send to Web Server:** Use the existing `xQueueSend` to pass the same frame buffer to the web server's stream handler.
 
 2.  **Implement `camera_info` Publishing:**
-    *   Create a timer that periodically publishes a `CameraInfo` message. For now, the values can be hardcoded based on the camera's datasheet or a standard calibration.
+    *   Create a timer that periodically publishes a `CameraInfo` message with placeholder values.
 
 3.  **Implement LED Subscriber Callback:**
-    *   Create a callback function for the `/camera/led` subscriber.
-    *   Inside the callback, read the boolean value from the message and use the appropriate ESP-IDF GPIO functions to turn the camera's flash LED on or off.
+    *   Create a callback function for the `/camera/led` subscriber that uses ESP-IDF GPIO functions to control the flash LED.
 
 ---
 
 ### Phase 4: Testing and Validation
 
-**Goal:** Verify that the new firmware correctly communicates with the ROS 2 system.
+**Goal:** Verify that both the web server and the micro-ROS interface are working correctly.
 
 1.  **Start the Micro-ROS Agent:**
-    *   On the host computer, run the Micro-ROS agent, configured to listen for connections from the ESP32 over UDP.
+    *   On the host computer, run the agent, ensuring it is on the same network and its hostname is discoverable via mDNS.
     *   `ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888`
 
 2.  **Flash and Monitor the ESP32:**
-    *   Build and flash the new firmware to the ESP32-CAM.
-    *   Monitor the serial output to ensure it successfully connects to Wi-Fi and the Micro-ROS agent.
+    *   Build, flash, and monitor the firmware.
+    *   Confirm that it connects to WiFi, discovers the agent, and initializes the micro-ROS node successfully.
 
-3.  **Verify ROS 2 Topics:**
-    *   On the host computer, use `ros2 topic list` to confirm that the `/camera/image_raw/compressed` and `/camera/camera_info` topics are being published.
-    *   Use `ros2 topic echo /camera/image_raw/compressed` to see the raw image data being received.
-    *   Use a tool like `rqt_image_view` to visualize the camera stream in real-time.
-    *   Test the LED control by publishing to the `/camera/led` topic: `ros2 topic pub /camera/led std_msgs/msg/Bool "data: true"`
+3.  **Verify Both Interfaces:**
+    *   **Web Server:** Access the video stream via `http://<ESP32_IP>/stream` in a browser.
+    *   **Micro-ROS:** Use ROS 2 tools to verify the topics.
+        *   `ros2 topic list`
+        *   `ros2 run rqt_image_view rqt_image_view` to view the `/camera/image_raw/compressed` stream.
+        *   `ros2 topic pub /camera/led std_msgs/msg/Bool "data: true"` to test LED control.
