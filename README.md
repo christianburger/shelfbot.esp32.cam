@@ -18,7 +18,7 @@ This project requires a one-time setup of the Micro-ROS build system within the 
 2.  **Install Build Dependencies:**
     Source your ESP-IDF environment script, then use `pip` to install the necessary ROS 2 build tools into the IDF's local Python environment.
     ```bash
-    . /path/to/your/esp-idf/export.sh
+    . $IDF_PATH/export.sh
     pip3 install catkin_pkg lark-parser colcon-common-extensions
     ```
 
