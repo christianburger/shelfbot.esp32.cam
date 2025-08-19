@@ -2,6 +2,7 @@ build/*
 build/
 
 sdkconfig.old
+sdkconfig.local
 
 # Prerequisites
 *.d

@@ -2,6 +2,35 @@
 
 A high-performance camera streaming solution using ESP32 with integrated web server capabilities.
 
+## Setup from Scratch (with Micro-ROS)
+
+This project requires a manual setup for the Micro-ROS component.
+
+1.  **Clone the Project:**
+    ```bash
+    git clone <repository_url>
+    cd shelfbot.esp32.cam
+    ```
+
+2.  **Install Micro-ROS Component:**
+    Clone the `micro_ros_espidf_component` into the `components` directory.
+    ```bash
+    git clone https://github.com/micro-ROS/micro_ros_espidf_component.git components/micro_ros_espidf_component
+    ```
+
+3.  **Install Build Dependencies:**
+    Source your ESP-IDF environment and then install the required Python packages. This is a one-time setup for the environment.
+    ```bash
+    . /path/to/your/esp-idf/export.sh
+    pip3 install catkin_pkg lark-parser colcon-common-extensions
+    ```
+
+4.  **Build the Project:**
+    You can now build the project. The first build will take a long time as it compiles the Micro-ROS library from scratch.
+    ```bash
+    idf.py build
+    ```
+
 ## Hardware Support
 
 ### Supported Camera Modules

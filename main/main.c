@@ -7,6 +7,7 @@
 #include "freertos/queue.h"
 #include "network_manager.h"
 #include "esp_log.h"
+#include "shelfbot_camera.h"
 
 // Camera pins for ESP32
 #define CAM_PIN_PWDN    32
@@ -132,6 +133,9 @@ void app_main(void) {
 
     // Camera task on core 0 with medium priority
     xTaskCreatePinnedToCore(camera_task, "camera_task", 8192, NULL, configMAX_PRIORITIES - 2, NULL, 0);
+
+    // Micro-ROS task on core 0 with lower priority
+    xTaskCreatePinnedToCore(shelfbot_camera_task, "shelfbot_camera_task", SHELFBOT_CAMERA_TASK_STACK_SIZE, NULL, SHELFBOT_CAMERA_TASK_PRIORITY, NULL, 0);
 
     // Process frame task on core 0 with lower priority
     //xTaskCreatePinnedToCore(process_frame_task, "process_frame", 8192, NULL, configMAX_PRIORITIES - 3, NULL, 0);
