@@ -51,6 +51,10 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        
+        // mDNS can be started now that we have an IP
+        initialise_mdns();
+        xEventGroupSetBits(s_wifi_event_group, MDNS_STARTED_BIT);
     }
 }
 
@@ -101,8 +105,6 @@ void network_task(void *pvParameters) {
         if (server == NULL) { // Only check for connection if server is not started
             if (bits & WIFI_CONNECTED_BIT) {
                 ESP_LOGI(TAG, "connected to ap SSID:%s", WIFI_SSID);
-                
-                initialise_mdns();
 
                 httpd_config_t config = HTTPD_DEFAULT_CONFIG();
                 config.stack_size = NETWORK_TASK_STACK_SIZE;
