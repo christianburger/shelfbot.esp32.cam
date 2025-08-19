@@ -17,7 +17,7 @@ static const char *TAG = "network_manager";
 static httpd_handle_t server = NULL;
 
 // --- FreeRTOS event group to signal when we are connected ---
-static EventGroupHandle_t s_wifi_event_group;
+EventGroupHandle_t s_wifi_event_group;
 
 // --- Event bits for connection status ---
 #define WIFI_CONNECTED_BIT BIT0
