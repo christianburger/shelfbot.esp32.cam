@@ -11,6 +11,7 @@
 #include "esp_system.h"
 #include "controller.h"
 #include "esp_psram.h"
+#include "mdns.h"
 
 static const char *TAG = "network_manager";
 static httpd_handle_t server = NULL;
@@ -25,6 +26,13 @@ static EventGroupHandle_t s_wifi_event_group;
 // --- Retry logic ---
 static int s_retry_num = 0;
 #define WIFI_MAXIMUM_RETRY 10
+
+static void initialise_mdns(void)
+{
+    mdns_init();
+    mdns_hostname_set("shelfbot-camera");
+    mdns_instance_name_set("Shelfbot Camera");
+}
 
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -94,6 +102,8 @@ void network_task(void *pvParameters) {
             if (bits & WIFI_CONNECTED_BIT) {
                 ESP_LOGI(TAG, "connected to ap SSID:%s", WIFI_SSID);
                 
+                initialise_mdns();
+
                 httpd_config_t config = HTTPD_DEFAULT_CONFIG();
                 config.stack_size = NETWORK_TASK_STACK_SIZE;
                 config.task_priority = NETWORK_TASK_PRIORITY;

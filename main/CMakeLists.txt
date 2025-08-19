@@ -8,4 +8,5 @@ idf_component_register(SRCS "main.c" "network_manager.c" "controller.c"
                                esp_http_server
                                esp_event
                                esp_timer
-                               esp_psram)
+                               esp_psram
+                               shelfbot_camera)
