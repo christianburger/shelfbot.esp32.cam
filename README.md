@@ -69,6 +69,48 @@ The firmware exposes the following ROS 2 topics.
 
 ---
 
+## System Architecture and Data Flow
+
+This project integrates a resource-constrained microcontroller (ESP32-CAM) into a full-fledged ROS 2 system. This is achieved through a client-agent architecture.
+
+-   **ESP32-CAM Firmware:** Acts as the **micro-ROS Client**. It runs the camera sensor and publishes data to the agent, while also subscribing to commands from the agent.
+-   **micro-ROS Agent:** A program running on the main ROS 2 computer that acts as a **bridge**. It relays topics from the micro-ROS client onto the main ROS 2 network, and vice-versa. It is a transparent proxy.
+-   **ROS 2 Application:** Any standard ROS 2 node running on the computer (e.g., `rqt_image_view`, RViz, or a custom control node).
+
+### Data Flow Summary
+
+| Topic Name                     | Message Type                      | Producer            | Consumer            | Purpose                                              |
+| :----------------------------- | :-------------------------------- | :------------------ | :------------------ | :--------------------------------------------------- |
+| `/camera/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` | `ESP32-CAM`         | `ROS 2 Application` | Streams the live JPEG video frames from the camera.  |
+| `/camera/camera_info`          | `sensor_msgs/msg/CameraInfo`      | `ESP32-CAM`         | `ROS 2 Application` | Provides camera calibration and metadata.            |
+| `/camera/led`                  | `std_msgs/msg/Bool`               | `ROS 2 Application` | `ESP32-CAM`         | Sends a command to turn the camera's flash LED on or off. |
+
+### Detailed Data Flow
+
+**1. Image Stream (`/camera/image_raw/compressed`)**
+
+*   The `ESP32-CAM` **captures** a frame from its image sensor.
+*   The firmware **packages** this JPEG data into a `sensor_msgs/msg/CompressedImage` message.
+*   This message is **published** over the network to the **micro-ROS Agent**.
+*   The Agent then **re-publishes** it onto the main ROS 2 network.
+*   A `ROS 2 Application` (like `rqt_image_view`) **subscribes** to the topic and receives the frame for display or processing.
+
+**2. Camera Info (`/camera/camera_info`)**
+
+*   A timer on the `ESP32-CAM` triggers periodically.
+*   The firmware **creates** a `sensor_msgs/msg/CameraInfo` message containing the camera's metadata.
+*   This message is **published** to the **micro-ROS Agent** and then onto the ROS 2 network.
+*   A `ROS 2 Application` can **subscribe** to this topic to get the camera's parameters for tasks like image rectification.
+
+**3. LED Control (`/camera/led`)**
+
+*   A `ROS 2 Application` **publishes** a `std_msgs/msg/Bool` message (with a value of `true` or `false`) to the `/camera/led` topic.
+*   The **micro-ROS Agent** **receives** this message and forwards it over the network to the `ESP32-CAM`.
+*   The firmware on the `ESP32-CAM` **receives** the message, and its subscriber callback function is triggered.
+*   The callback function then **executes** the command, turning the physical flash LED on or off.
+
+---
+
 ## Testing and Validation
 
 To use this firmware, you must have a Micro-ROS agent running on your host computer.
@@ -134,4 +176,3 @@ Data 7:      GPIO35    |  HREF:       GPIO23
 Data 6:      GPIO34    |  PCLK:       GPIO22
 Data 5:      GPIO39    |  Data 2:     GPIO19
 ```
-

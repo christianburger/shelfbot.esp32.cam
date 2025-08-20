@@ -1,0 +1,59 @@
+@startuml
+!theme vibrant
+
+title Shelfbot Application Micro-ROS Communication Flow
+
+autonumber "<b>[0]"
+
+box "ROS 2 Computer" #LightBlue
+    participant "Shelfbot Application" as Shelfbot
+    participant "micro-ROS Agent" as Agent
+end box
+
+box "Microcontroller" #LightGreen
+    participant "ESP32-CAM Firmware" as Firmware
+end box
+
+== 1. Setup & Discovery ==
+Firmware -> Agent: Establish UDP Connection
+activate Firmware
+activate Agent
+Agent -> Agent: Create Client Session
+Agent --> Firmware: Acknowledge Session
+
+note right of Agent
+  The Agent now creates ROS 2 entities
+  (Node, Publishers, Subscribers)
+  on behalf of the Firmware. These
+  become discoverable on the ROS 2 network.
+end note
+deactivate Agent
+
+... 5 seconds later ...
+
+Shelfbot -> Shelfbot: Discover `/camera/image_raw/compressed` topic
+activate Shelfbot
+Shelfbot -> Agent: Subscribe to topic
+deactivate Shelfbot
+
+== 2. Image Data Stream (Loop) ==
+Firmware -> Firmware: Capture Frame
+Firmware -> Agent: Publish `CompressedImage` message
+activate Agent
+Agent -> Shelfbot: Forward `CompressedImage` message
+activate Shelfbot
+Shelfbot -> Shelfbot: Process Image (AprilTag, SLAM, Obstacles)
+deactivate Shelfbot
+deactivate Agent
+
+== 3. LED Control Command (Example) ==
+Shelfbot -> Agent: Publish `Bool` message to `/camera/led`
+activate Shelfbot
+activate Agent
+Agent -> Firmware: Forward `Bool` message
+Firmware -> Firmware: Execute LED Callback
+deactivate Agent
+deactivate Shelfbot
+deactivate Firmware
+
+@enduml
