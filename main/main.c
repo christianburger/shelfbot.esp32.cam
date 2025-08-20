@@ -51,45 +51,12 @@ static camera_config_t camera_config = {
     .pixel_format = PIXFORMAT_JPEG,
     .frame_size = FRAMESIZE_SVGA,
     .jpeg_quality = 12,
-    .fb_count = 1
+    .fb_count = 2 // Increased from 1 to 2 to allow double buffering
 };
 
 QueueHandle_t frame_queue;
 
 static const char *TAG = "main";
-SemaphoreHandle_t frame_ready_semaphore = NULL;
-
-void process_frame_task(void *pvParameters) {
-    camera_fb_t *pic;
-    static char buf[128];  // Buffer for hex conversion
-    
-    while(1) {
-        if(xQueueReceive(frame_queue, &pic, portMAX_DELAY)) {
-            printf("<start_picture>\n");
-            printf("Width: %d\n", pic->width);
-            printf("Height: %d\n", pic->height);
-            printf("Format: %d\n", pic->format);
-            printf("Size: %zu\n", pic->len);
-            
-            // Process in chunks with yields
-            for(size_t i = 0; i < pic->len; i += 32) {
-                size_t chunk = (pic->len - i > 32) ? 32 : (pic->len - i);
-                for(size_t j = 0; j < chunk; j++) {
-                    //Prints the binary frame on serial.
-                    //sprintf(buf + (j*2), "%02X", pic->buf[i + j]);
-                }
-
-                //Prints carriage return after each chunk of the frame.
-                //printf("%s\n", buf);
-                vTaskDelay(1);  // Yield to prevent watchdog trigger
-            }
-            
-            printf("<end_picture>\n");
-            esp_camera_fb_return(pic);
-        }
-        vTaskDelay(1);
-    }
-}
 
 void camera_task(void *pvParameters) {
     ESP_LOGI(TAG, "Starting camera initialization");
@@ -102,15 +69,16 @@ void camera_task(void *pvParameters) {
     ESP_LOGI(TAG, "Camera initialized successfully");
     
     while(1) {
-        if (xSemaphoreTake(frame_ready_semaphore, portMAX_DELAY) == pdTRUE) {
-            camera_fb_t *pic = esp_camera_fb_get();
-            if (pic) {
-                ESP_LOGI(TAG, "Frame captured: %dx%d", pic->width, pic->height);
-                xQueueSend(frame_queue, &pic, portMAX_DELAY);
+        camera_fb_t *pic = esp_camera_fb_get();
+        if (pic) {
+            //ESP_LOGI(TAG, "Frame captured: %dx%d", pic->width, pic->height);
+            if (xQueueSend(frame_queue, &pic, 0) != pdTRUE) {
+                // If the queue is full, it means consumers are not keeping up.
+                // Return the frame to avoid memory leaks.
+                esp_camera_fb_return(pic);
             }
-            xSemaphoreGive(frame_ready_semaphore);
-            vTaskDelay(pdMS_TO_TICKS(100));
         }
+        vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to prevent watchdog issues if queue is full
     }
 }
 
@@ -118,25 +86,12 @@ void app_main(void) {
     // Create frame queue for camera
     frame_queue = xQueueCreate(2, sizeof(camera_fb_t*));
     
-    // Create frame ready semaphore
-    frame_ready_semaphore = xSemaphoreCreateBinary();
-    if (frame_ready_semaphore == NULL) {
-        ESP_LOGE(TAG, "Failed to create frame_ready_semaphore");
-        return;
-    }
+    // Highest priority task to capture frames from the camera hardware
+    xTaskCreatePinnedToCore(camera_task, "camera_task", 4096, NULL, configMAX_PRIORITIES - 1, NULL, 0);
 
-    // Give the semaphore first time so it can be taken
-    xSemaphoreGive(frame_ready_semaphore);
+    // Lower priority task for network operations (web server)
+    xTaskCreatePinnedToCore(network_task, "network_task", NETWORK_TASK_STACK_SIZE, NULL, 5, NULL, 1);
 
-    // Network task on core 1 with highest priority
-    xTaskCreatePinnedToCore(network_task, "network_task", NETWORK_TASK_STACK_SIZE, NULL, configMAX_PRIORITIES - 1, NULL, 1);
-
-    // Camera task on core 0 with medium priority
-    xTaskCreatePinnedToCore(camera_task, "camera_task", 8192, NULL, configMAX_PRIORITIES - 2, NULL, 0);
-
-    // Micro-ROS task on core 1 with lower priority
-    xTaskCreatePinnedToCore(shelfbot_camera_task, "shelfbot_camera_task", SHELFBOT_CAMERA_TASK_STACK_SIZE, NULL, SHELFBOT_CAMERA_TASK_PRIORITY, NULL, 1);
-
-    // Process frame task on core 0 with lower priority
-    //xTaskCreatePinnedToCore(process_frame_task, "process_frame", 8192, NULL, configMAX_PRIORITIES - 3, NULL, 0);
+    // Lower priority task for micro-ROS operations
+    xTaskCreatePinnedToCore(shelfbot_camera_task, "shelfbot_camera_task", SHELFBOT_CAMERA_TASK_STACK_SIZE, NULL, 5, NULL, 1);
 }
