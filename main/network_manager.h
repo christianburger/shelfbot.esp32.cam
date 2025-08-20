@@ -9,6 +9,7 @@
 extern EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define MDNS_STARTED_BIT   BIT1
+#define UROS_INIT_COMPLETE_BIT BIT2
 
 #define WIFI_SSID "dlink-30C0"
 #define WIFI_PASS "ypics98298"
