@@ -138,12 +138,11 @@ void shelfbot_camera_task(void *pvParameters) {
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool),
         "/esp32_cam/led"));
 
-    RCCHECK(rclc_timer_init_default2(
-        &camera_info_timer,
-        &support,
-        RCL_MS_TO_NS(1000),
-        camera_info_timer_callback,
-        true));
+    RCCHECK(rclc_timer_init_default(
+      &camera_info_timer,
+      &support,
+      RCL_MS_TO_NS(1000),
+      camera_info_timer_callback));
 
     RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
     RCCHECK(rclc_executor_add_timer(&executor, &camera_info_timer));
