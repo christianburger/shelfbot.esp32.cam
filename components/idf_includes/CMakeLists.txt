@@ -9,6 +9,7 @@ idf_component_register(
         esp_common
         esp_event
         esp_netif
+        esp_psram
         esp_hw_support
         esp_driver_gpio
         esp_wifi

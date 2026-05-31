@@ -1,6 +1,5 @@
 #pragma once
-
-#include "idf_c_includes.hpp"
+#include <idf_c_includes.hpp>
 
 // ---------------------------------------------------------------------------
 // Public event-group bits
@@ -34,7 +33,7 @@ typedef struct {
 } wifi_manager_info_t;
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public API (pure C++, no extern "C")
 // ---------------------------------------------------------------------------
 esp_err_t          wifi_manager_init(void);
 void               wifi_manager_get_info(wifi_manager_info_t *out);

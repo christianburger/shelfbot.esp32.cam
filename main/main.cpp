@@ -1,33 +1,9 @@
-/*
- * main.c – shelfbot.esp32.cam
- *
- * Task layout:
- *   Core 0  camera_task      captures frames → publishCompressedImage()
- *   Core 0  microros_task    micro-ROS executor (spawned by MicrorosSync::start)
- *   Core 1  wifi_mgr         multi-AP Wi-Fi manager (spawned by wifi_manager_init)
- *
- * Removed: network_manager, controller (HTTP server), frame_queue,
- *          frame_ready_semaphore, shelfbot_camera_task, process_frame_task.
- */
-
-#include <stdio.h>
-#include <string.h>
-#include "esp_system.h"
-#include "esp_camera.h"
-#include "esp_log.h"
-#include "esp_err.h"
-#include "nvs_flash.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_netif.h"
-#include "esp_event.h"
-#include "microros_sync_c.h"
+#include <wifi_manager.hpp>
+#include <microros_sync.hpp>
 
 static const char *TAG = "main";
 
-// ---------------------------------------------------------------------------
 // Camera pin map – ESP32-CAM AI-Thinker module
-// ---------------------------------------------------------------------------
 #define CAM_PIN_PWDN    32
 #define CAM_PIN_RESET   -1
 #define CAM_PIN_XCLK     0
@@ -66,14 +42,14 @@ static const camera_config_t camera_config = {
     .ledc_timer    = LEDC_TIMER_0,
     .ledc_channel  = LEDC_CHANNEL_0,
     .pixel_format  = PIXFORMAT_JPEG,
-    .frame_size    = FRAMESIZE_SVGA,   // 800x600
+    .frame_size    = FRAMESIZE_SVGA,
     .jpeg_quality  = 12,
     .fb_count      = 1,
+    .fb_location   = CAMERA_FB_IN_PSRAM,
+    .grab_mode     = CAMERA_GRAB_WHEN_EMPTY,
+    .sccb_i2c_port = 0
 };
 
-// ---------------------------------------------------------------------------
-// Camera task – ~10 fps
-// ---------------------------------------------------------------------------
 static void camera_task(void *pvParameters) {
     ESP_LOGI(TAG, "Initialising camera...");
     esp_err_t err = esp_camera_init(&camera_config);
@@ -90,19 +66,16 @@ static void camera_task(void *pvParameters) {
         if (fb) {
             ESP_LOGD(TAG, "Frame %lu: %dx%d %zu B",
                      (unsigned long)seq, fb->width, fb->height, fb->len);
-            microros_publish_image(fb->buf, fb->len, seq++);
+            MicrorosSync::publishCompressedImage(fb->buf, fb->len, seq++);
             esp_camera_fb_return(fb);
         } else {
             ESP_LOGE(TAG, "esp_camera_fb_get() failed");
         }
-        vTaskDelay(pdMS_TO_TICKS(100)); // ~10 fps
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
-// ---------------------------------------------------------------------------
-// app_main
-// ---------------------------------------------------------------------------
-void app_main(void) {
+extern "C" void app_main(void) {
     // 1. NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -111,24 +84,22 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(ret);
 
-    // 2. TCP/IP stack + default event loop (called once here; wifi_manager
-    //    uses these but does not re-initialise them)
+    // 2. TCP/IP stack + default event loop
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // 3. Wi-Fi manager (spawns wifi_mgr task on Core 1)
+    // 3. Wi‑Fi manager
     ESP_ERROR_CHECK(wifi_manager_init());
 
-    // 4. micro-ROS sync (spawns microros_task on Core 0)
-    microros_init();
-    microros_start();
+    // 4. micro‑ROS sync
+    MicrorosSync::getInstance().init();
+    MicrorosSync::getInstance().start();
 
     // 5. Camera task (Core 0)
-    xTaskCreatePinnedToCore(
-        camera_task, "camera_task",
-        8192, NULL,
-        configMAX_PRIORITIES - 2,
-        NULL, 0);
+    xTaskCreatePinnedToCore(camera_task, "camera_task",
+                            8192, NULL,
+                            configMAX_PRIORITIES - 2,
+                            NULL, 0);
 
     ESP_LOGI(TAG, "app_main done – all tasks running");
 }

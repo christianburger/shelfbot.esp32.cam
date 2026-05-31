@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.c" "microros_sync_c.cpp"
+    SRCS "main.cpp"
     INCLUDE_DIRS "."
     REQUIRES
         esp32-camera

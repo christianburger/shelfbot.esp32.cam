@@ -1,12 +1,6 @@
-// wifi_manager.cpp – ported from shelfbot main firmware for shelfbot.esp32.cam
-// Changes vs original:
-//   • Removed state_machine / state_machine_lifecycle dependencies
-//   • Credentials and tuning supplied via Kconfig (main/Kconfig.projbuild)
-//   • No FastAccelStepper, sensor_manager, motor_control, or led_control deps
+#include <wifi_manager.hpp>
 
-#include "wifi_manager.hpp"
-
-static const char *TAG = "wifi_manager";
+static auto TAG = "wifi_manager";
 
 // ---------------------------------------------------------------------------
 // Kconfig fallbacks (symbols defined in main/Kconfig.projbuild)

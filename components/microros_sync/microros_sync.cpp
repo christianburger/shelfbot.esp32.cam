@@ -1,23 +1,6 @@
-// microros_sync.cpp – camera edition for shelfbot.esp32.cam
-//
-// Ported from the main shelfbot firmware's microros_sync component.
-// Removed: motor/sensor/LED-control deps, state_machine, firmware_version.
-// Added:   CompressedImage publisher, CameraInfo publisher, LED GPIO sub.
+#include <microros_sync.hpp>
 
-#include "microros_sync.hpp"
-#include "idf_c_includes.hpp"
-#include "wifi_manager.hpp"
-
-#include <rcl/rcl.h>
-#include <rclc/rclc.h>
-#include <rclc/executor.h>
-#include <rmw_microros/rmw_microros.h>
-#include <std_msgs/msg/bool.h>
-#include <sensor_msgs/msg/compressed_image.h>
-#include <sensor_msgs/msg/camera_info.h>
-#include <builtin_interfaces/msg/time.h>
-
-static const char *TAG = "MicrorosSync";
+static const auto *TAG = "MicrorosSync";
 
 // ---------------------------------------------------------------------------
 // Kconfig fallbacks
