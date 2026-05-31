@@ -15,7 +15,6 @@ extern "C" {
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_err.h"
-#include "esp_task_wdt.h"
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -26,6 +25,12 @@ extern "C" {
 
 // Drivers
 #include "driver/gpio.h"
+
+// HTTP server
+#include "esp_http_server.h"
+
+// JSON
+#include "cJSON.h"
 
 // Protocols
 #include "mdns.h"

@@ -1,7 +1,9 @@
 idf_component_register(
-    SRCS "main.cpp"
+    SRCS
+        "main.cpp"
     INCLUDE_DIRS "."
     REQUIRES
+        idf_includes
         esp32-camera
         esp_system
         freertos
@@ -10,8 +12,8 @@ idf_component_register(
         esp_event
         esp_timer
         esp_psram
-        idf_includes
         wifi_manager
         microros_sync
         micro_ros_espidf_component
+        http_server
 )

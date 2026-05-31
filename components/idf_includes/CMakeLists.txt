@@ -13,9 +13,11 @@ idf_component_register(
         esp_hw_support
         esp_driver_gpio
         esp_wifi
+        esp_http_server
         mdns
         nvs_flash
         lwip
+        json
         micro_ros_espidf_component
         esp32-camera
 )
