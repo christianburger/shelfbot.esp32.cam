@@ -57,7 +57,7 @@ Mkfile.old
 dkms.conf
 
 # ESP-IDF Component Manager
-components/
+components/micro_ros_espidf_component/
 managed_components/
 dependencies.lock
 
