@@ -19,15 +19,14 @@ public:
     // and wifi_manager_init().
     esp_err_t init(QueueHandle_t frame_queue);
 
-    // FreeRTOS task entry point – not used directly in current main, kept for compatibility.
+    // FreeRTOS task entry point – kept for compatibility.
     static void network_task(void* arg);
 
 private:
     NetworkManager()  = default;
     ~NetworkManager() = default;
 
-    static const char* TAG;
-
+    static const char* TAG;                     // class static member
     static esp_err_t start_http_server(QueueHandle_t frame_queue);
 };
 

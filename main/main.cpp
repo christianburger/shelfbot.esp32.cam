@@ -95,6 +95,14 @@ extern "C" void app_main() {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
+    // ---------- mDNS initialisation and service registration ----------
+    ESP_ERROR_CHECK(mdns_init());
+    ESP_ERROR_CHECK(mdns_hostname_set("web-cam"));
+    ESP_ERROR_CHECK(mdns_instance_name_set("ESP32-CAM HTTP Server"));
+    ESP_ERROR_CHECK(mdns_service_add(nullptr, "_http", "_tcp", 80, nullptr, 0));
+    ESP_LOGI(TAG, "mDNS initialised: http://web-cam.local");
+    // -----------------------------------------------------------------
+
     StateMachine::init();
     StateMachine::setInitial("shelfbot", stateToString(ShelfbotState::STARTING));
 

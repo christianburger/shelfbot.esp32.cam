@@ -1,5 +1,5 @@
 #include <idf_c_includes.hpp>
-#include <wifi_manager.hpp>          // <-- needed for wifi_manager_get_event_group and WM_CONNECTED_BIT
+#include <wifi_manager.hpp>
 #include <microros_sync.hpp>
 #include <state_machine.hpp>
 #include <state_machine_lifecycle.hpp>
@@ -40,10 +40,11 @@ static bool allocate_image_data(size_t required_size) {
     return true;
 }
 
-// mDNS discovery (pure, no static fallback)
+// mDNS discovery – uses esp_ip4_addr_t (ESP-IDF type)
 static bool discover_agent(const char* hostname, uint32_t timeout_ms) {
     ESP_LOGI(TAG, "mDNS query: %s.local", hostname);
-    ip4_addr_t agent_addr;                     // now defined because idf_c_includes.hpp includes lwip/inet.h
+    esp_ip4_addr_t agent_addr;        // ✅ correct type for mdns_query_a
+    agent_addr.addr = 0;              // clear address
     esp_err_t err = mdns_query_a(hostname, timeout_ms, &agent_addr);
     if (err != ESP_OK || agent_addr.addr == 0) {
         ESP_LOGE(TAG, "mDNS failed for %s.local", hostname);
