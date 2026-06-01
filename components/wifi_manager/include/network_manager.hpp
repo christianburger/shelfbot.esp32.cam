@@ -14,12 +14,12 @@ public:
     NetworkManager(const NetworkManager&)            = delete;
     NetworkManager& operator=(const NetworkManager&) = delete;
 
-    // Initialise Wi-Fi, start HTTP server, and begin the network task.
-    // Must be called after nvs_flash_init, esp_netif_init, and
-    // esp_event_loop_create_default.
+    // Initialise HTTP server (Wi-Fi must already be started by wifi_manager).
+    // Must be called after nvs_flash_init, esp_netif_init, esp_event_loop_create_default,
+    // and wifi_manager_init().
     esp_err_t init(QueueHandle_t frame_queue);
 
-    // FreeRTOS task entry point — do not call directly.
+    // FreeRTOS task entry point – not used directly in current main, kept for compatibility.
     static void network_task(void* arg);
 
 private:
@@ -28,12 +28,6 @@ private:
 
     static const char* TAG;
 
-    static void wifi_event_handler(void*             arg,
-                                   esp_event_base_t  event_base,
-                                   int32_t           event_id,
-                                   void*             event_data);
-
-    static esp_err_t wifi_init_sta();
     static esp_err_t start_http_server(QueueHandle_t frame_queue);
 };
 

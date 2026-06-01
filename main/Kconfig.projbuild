@@ -1,69 +1,86 @@
-menu "Shelfbot Camera Configuration"
+menu "Wi-Fi Configuration"
 
-    menu "Wi-Fi"
-        config WIFI_SSID_1
-            string "Primary Wi-Fi SSID"
-            default ""
-        config WIFI_PASS_1
-            string "Primary Wi-Fi Password"
-            default ""
-        config WIFI_SSID_2
-            string "Fallback Wi-Fi SSID #2"
-            default ""
-        config WIFI_PASS_2
-            string "Fallback Wi-Fi Password #2"
-            default ""
-        config WIFI_SSID_3
-            string "Fallback Wi-Fi SSID #3"
-            default ""
-        config WIFI_PASS_3
-            string "Fallback Wi-Fi Password #3"
-            default ""
-        config WIFI_SSID_4
-            string "Fallback Wi-Fi SSID #4"
-            default ""
-        config WIFI_PASS_4
-            string "Fallback Wi-Fi Password #4"
-            default ""
-        config WIFI_RSSI_WARN_THRESHOLD
-            int "RSSI warn threshold (dBm)"
-            default -75
-        config WIFI_RSSI_CRITICAL_THRESHOLD
-            int "RSSI critical threshold (dBm)"
-            default -85
-        config WIFI_DEGRADED_CONFIRM_N
-            int "Consecutive degraded samples before roaming"
-            default 3
-        config WIFI_MONITOR_INTERVAL_MS
-            int "RSSI monitor interval (ms)"
-            default 5000
-        config WIFI_RETRIES_PER_NETWORK
-            int "Connection attempts per network before moving on"
-            default 3
-        config WIFI_INTER_CYCLE_DELAY_S
-            int "Delay between scan cycles when no AP found (s)"
-            default 10
-    endmenu
+    config WIFI_SSID_1
+        string "Wi-Fi SSID #1"
+        default ""
+        help
+            SSID of the first Wi-Fi network to connect to.
+            Leave empty to skip.
 
-    menu "micro-ROS Agent"
-        config MICROROS_AGENT_MDNS_HOST
-            string "Agent mDNS hostname (without .local)"
-            default "shelfbot-agent"
-        config MICROROS_AGENT_IP
-            string "Agent static IP (fallback if mDNS fails)"
-            default ""
-        config MICROROS_AGENT_PORT
-            string "Agent UDP port"
-            default "8888"
-    endmenu
+    config WIFI_PASS_1
+        string "Wi-Fi Password #1"
+        default ""
+        help
+            Password for the first Wi-Fi network. Leave empty for open network.
 
-    menu "Camera"
-        config CAMERA_LED_GPIO
-            int "Flash LED GPIO number"
-            default 4
-            help
-                GPIO for the onboard flash LED (GPIO 4 on AI-Thinker ESP32-CAM).
-                Controlled via /camera/led ROS topic.
-    endmenu
+    config WIFI_SSID_2
+        string "Wi-Fi SSID #2"
+        default ""
+        help
+            SSID of the second Wi-Fi network.
+
+    config WIFI_PASS_2
+        string "Wi-Fi Password #2"
+        default ""
+
+    config WIFI_SSID_3
+        string "Wi-Fi SSID #3"
+        default ""
+
+    config WIFI_PASS_3
+        string "Wi-Fi Password #3"
+        default ""
+
+    config WIFI_SSID_4
+        string "Wi-Fi SSID #4"
+        default ""
+
+    config WIFI_PASS_4
+        string "Wi-Fi Password #4"
+        default ""
+
+    config WIFI_RSSI_WARN_THRESHOLD
+        int "RSSI warning threshold (dBm)"
+        default -75
+        range -100 -30
+        help
+            If RSSI drops below this value, the connection is considered degraded.
+            More negative = weaker signal.
+
+    config WIFI_RSSI_CRITICAL_THRESHOLD
+        int "RSSI critical threshold (dBm)"
+        default -85
+        range -100 -30
+        help
+            If RSSI drops below this value, the manager will immediately scan for a better AP.
+
+    config WIFI_DEGRADED_CONFIRM_N
+        int "Number of consecutive degraded samples before switching"
+        default 3
+        range 1 10
+        help
+            How many consecutive RSSI readings below the warning threshold are required
+            to trigger a scan for a better AP.
+
+    config WIFI_MONITOR_INTERVAL_MS
+        int "RSSI monitoring interval (ms)"
+        default 5000
+        range 1000 60000
+        help
+            How often to check the RSSI of the current connection while connected.
+
+    config WIFI_RETRIES_PER_NETWORK
+        int "Connection attempts per network"
+        default 3
+        range 1 10
+        help
+            How many times to try connecting to a specific AP before giving up.
+
+    config WIFI_INTER_CYCLE_DELAY_S
+        int "Delay between scan cycles when no AP is visible (seconds)"
+        default 10
+        range 1 120
+        help
+            How long to wait when no known AP is found before scanning again.
 
 endmenu

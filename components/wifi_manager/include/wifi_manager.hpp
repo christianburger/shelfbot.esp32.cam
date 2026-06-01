@@ -33,7 +33,7 @@ typedef struct {
 } wifi_manager_info_t;
 
 // ---------------------------------------------------------------------------
-// Public API (pure C++, no extern "C")
+// Public API
 // ---------------------------------------------------------------------------
 esp_err_t          wifi_manager_init(void);
 void               wifi_manager_get_info(wifi_manager_info_t *out);

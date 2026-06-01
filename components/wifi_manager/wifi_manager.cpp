@@ -180,12 +180,23 @@ static int scan_pick_best() {
     wifi_ap_record_t aps[SCAN_MAX_APS] = {};
     esp_wifi_scan_get_ap_records(&count, aps);
     ESP_LOGI(TAG, "scan: %u APs found", (unsigned)count);
+
+    // Print ALL APs found (new requirement)
+    for (uint16_t i = 0; i < count; i++) {
+        ESP_LOGI(TAG, "  AP[%u] SSID: %-32s RSSI: %3d dBm  Channel: %2u  Auth: %d",
+                 i,
+                 reinterpret_cast<const char*>(aps[i].ssid),
+                 aps[i].rssi,
+                 aps[i].primary,
+                 aps[i].authmode);
+    }
+
     int best_cred = -1; int8_t best_rssi = INT8_MIN;
     for (int ci = 0; ci < CRED_COUNT; ci++) {
         if (!s_creds[ci].ssid || s_creds[ci].ssid[0] == '\0') continue;
         for (uint16_t ai = 0; ai < count; ai++) {
             if (strcmp(reinterpret_cast<const char *>(aps[ai].ssid), s_creds[ci].ssid) == 0) {
-                ESP_LOGI(TAG, "  found \"%s\" ch%d rssi=%d",
+                ESP_LOGI(TAG, "  known AP \"%s\" ch%d rssi=%d",
                          reinterpret_cast<const char *>(aps[ai].ssid), aps[ai].primary, aps[ai].rssi);
                 if (aps[ai].rssi > best_rssi) { best_rssi = aps[ai].rssi; best_cred = ci; }
             }

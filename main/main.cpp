@@ -1,13 +1,15 @@
+#include <idf_c_includes.hpp>
 #include <wifi_manager.hpp>
 #include <microros_sync.hpp>
 #include <network_manager.hpp>
+#include <state_machine.hpp>
+#include <state_machine_lifecycle.hpp>
 
 static const char* TAG = "main";
 
 // ---------------------------------------------------------------------------
 // Camera pin map — ESP32-CAM AI-Thinker module
 // ---------------------------------------------------------------------------
-
 static constexpr int CAM_PIN_PWDN  = 32;
 static constexpr int CAM_PIN_RESET = -1;
 static constexpr int CAM_PIN_XCLK  =  0;
@@ -54,15 +56,7 @@ static const camera_config_t camera_config = {
     .sccb_i2c_port = 0,
 };
 
-// ---------------------------------------------------------------------------
-// Shared frame queue (camera_task → Controller handlers)
-// ---------------------------------------------------------------------------
-
 static QueueHandle_t frame_queue = nullptr;
-
-// ---------------------------------------------------------------------------
-// Camera task
-// ---------------------------------------------------------------------------
 
 static void camera_task(void*) {
     ESP_LOGI(TAG, "Initialising camera...");
@@ -73,17 +67,13 @@ static void camera_task(void*) {
         return;
     }
     ESP_LOGI(TAG, "Camera ready");
-
     uint32_t seq = 0;
     while (true) {
         camera_fb_t* fb = esp_camera_fb_get();
         if (fb) {
             ESP_LOGD(TAG, "Frame %lu: %dx%d %zu B",
                      static_cast<unsigned long>(seq), fb->width, fb->height, fb->len);
-
             MicrorosSync::publishCompressedImage(fb->buf, fb->len, seq++);
-
-            // Push to HTTP queue; drop frame if queue is full (non-blocking)
             if (xQueueSend(frame_queue, &fb, 0) != pdTRUE) {
                 esp_camera_fb_return(fb);
             }
@@ -94,12 +84,7 @@ static void camera_task(void*) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// app_main
-// ---------------------------------------------------------------------------
-
 extern "C" void app_main() {
-    // 1. NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -107,29 +92,23 @@ extern "C" void app_main() {
     }
     ESP_ERROR_CHECK(ret);
 
-    // 2. TCP/IP stack + default event loop
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // 3. Frame queue — capacity 2 so HTTP handlers can drain without blocking camera
+    StateMachine::init();
+    StateMachine::setInitial("shelfbot", stateToString(ShelfbotState::STARTING));
+
     frame_queue = xQueueCreate(2, sizeof(camera_fb_t*));
     configASSERT(frame_queue);
 
-    // 4. Wi-Fi manager (shelfbot multi-SSID roaming)
     ESP_ERROR_CHECK(wifi_manager_init());
-
-    // 5. micro-ROS sync
     MicrorosSync::getInstance().init();
     MicrorosSync::getInstance().start();
-
-    // 6. Network manager (Wi-Fi STA + HTTP server with Controller handlers)
     ESP_ERROR_CHECK(NetworkManager::get_instance().init(frame_queue));
 
-    // 7. Camera task on Core 0
-    xTaskCreatePinnedToCore(camera_task, "camera_task",
-                            8192, nullptr,
-                            configMAX_PRIORITIES - 2,
-                            nullptr, 0);
+    xTaskCreatePinnedToCore(camera_task, "camera_task", 8192, nullptr,
+                            configMAX_PRIORITIES - 2, nullptr, 0);
 
+    StateMachine::changeState("shelfbot", stateToString(ShelfbotState::RUNNING));
     ESP_LOGI(TAG, "app_main done — all tasks running");
 }

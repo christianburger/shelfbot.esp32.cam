@@ -3,11 +3,8 @@ idf_component_register(
     INCLUDE_DIRS "include"
     REQUIRES
         idf_includes
-        micro_ros_espidf_component
+        state_machine
         wifi_manager
-        esp32-camera
-        esp_driver_gpio
-        freertos
-        log
-        esp_timer
+        mdns
+        micro_ros_espidf_component
 )

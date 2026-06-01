@@ -19,6 +19,8 @@ extern "C" {
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "esp_psram.h"
+#include "esp_chip_info.h"
+#include "lwip/inet.h"
 
 // NVS
 #include "nvs_flash.h"
