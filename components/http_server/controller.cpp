@@ -1,4 +1,5 @@
 #include <controller.hpp>
+#include <camera_common.hpp>
 
 const char*    Controller::TAG          = "Controller";
 QueueHandle_t  Controller::frame_queue_ = nullptr;
@@ -34,19 +35,27 @@ esp_err_t Controller::capture_handler(httpd_req_t* req) {
         return httpd_resp_send_500(req);
     }
 
-    camera_fb_t* fb = nullptr;
-    if (xQueueReceive(frame_queue_, &fb, pdMS_TO_TICKS(1000)) != pdTRUE || !fb) {
+    // The queue carries CameraCommon::CameraFrame* (heap-allocated copies made
+    // in main.cpp::on_camera_frame). Do NOT interpret these as camera_fb_t* and
+    // do NOT call esp_camera_fb_return() on them — that would pass a new-allocated
+    // pointer to the IDF driver and corrupt the heap.
+    CameraCommon::CameraFrame* frame = nullptr;
+    if (xQueueReceive(frame_queue_, &frame, pdMS_TO_TICKS(1000)) != pdTRUE || !frame) {
         ESP_LOGE(TAG, "Timeout waiting for frame");
         return httpd_resp_send_500(req);
     }
 
-    ESP_LOGI(TAG, "Frame captured: %dx%d, %zu B", fb->width, fb->height, fb->len);
+    ESP_LOGI(TAG, "Frame captured: %" PRIu32 "x%" PRIu32 ", %zu B",
+             frame->width, frame->height, frame->length);
 
     httpd_resp_set_type(req, "image/jpeg");
     httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
-    const esp_err_t res = httpd_resp_send(req, reinterpret_cast<const char*>(fb->buf), fb->len);
+    const esp_err_t res = httpd_resp_send(
+        req, reinterpret_cast<const char*>(frame->buffer), frame->length);
 
-    esp_camera_fb_return(fb);
+    // Release the heap copy produced by on_camera_frame()
+    delete[] frame->buffer;
+    delete frame;
     return res;
 }
 
@@ -67,29 +76,34 @@ esp_err_t Controller::stream_handler(httpd_req_t* req) {
     static constexpr const char* PART_HDR =
         "--123456789000000000000987654321\r\n"
         "Content-Type: image/jpeg\r\n"
-        "Content-Length: %u\r\n\r\n";
+        "Content-Length: %zu\r\n\r\n";
 
     while (true) {
-        camera_fb_t* fb = nullptr;
-        if (xQueueReceive(frame_queue_, &fb, pdMS_TO_TICKS(1000)) != pdTRUE || !fb) {
+        // Same correction as capture_handler: dequeue CameraCommon::CameraFrame*.
+        CameraCommon::CameraFrame* frame = nullptr;
+        if (xQueueReceive(frame_queue_, &frame, pdMS_TO_TICKS(1000)) != pdTRUE || !frame) {
             ESP_LOGE(TAG, "Stream: timeout waiting for frame");
             break;
         }
 
-        ESP_LOGD(TAG, "Stream frame: %dx%d, %zu B", fb->width, fb->height, fb->len);
+        ESP_LOGD(TAG, "Stream frame: %" PRIu32 "x%" PRIu32 ", %zu B",
+                 frame->width, frame->height, frame->length);
 
         char hdr[128];
-        const int hdr_len = snprintf(hdr, sizeof(hdr), PART_HDR, fb->len);
+        const int hdr_len = snprintf(hdr, sizeof(hdr), PART_HDR, frame->length);
 
         esp_err_t res = httpd_resp_send_chunk(req, hdr, hdr_len);
         if (res == ESP_OK) {
-            res = httpd_resp_send_chunk(req, reinterpret_cast<const char*>(fb->buf), fb->len);
+            res = httpd_resp_send_chunk(
+                req, reinterpret_cast<const char*>(frame->buffer), frame->length);
         }
         if (res == ESP_OK) {
             res = httpd_resp_send_chunk(req, "\r\n", 2);
         }
 
-        esp_camera_fb_return(fb);
+        // Release the heap copy regardless of send outcome
+        delete[] frame->buffer;
+        delete frame;
 
         if (res != ESP_OK) {
             ESP_LOGI(TAG, "Stream: client disconnected");

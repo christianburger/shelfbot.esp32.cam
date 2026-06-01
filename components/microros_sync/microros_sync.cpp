@@ -159,13 +159,12 @@ static void microros_task(void* /*arg*/) {
                     break;
                 }
 
-                // 2. Inject the discovered agent IP into the RMW options —
-                //    this is the correct way; setenv("RMW_UXRCE_URI") does NOT work on ESP-IDF.
+                // 2. Inject the discovered agent IP into the RMW options
                 rmw_uros_options_set_udp_address(
                     agent_ip, "8888",
                     rcl_init_options_get_rmw_init_options(&init_options));
 
-                // 3. Init support with options (not the plain rclc_support_init)
+                // 3. Init support with options
                 ret = rclc_support_init_with_options(
                     &g_support, 0, NULL, &init_options, &g_allocator);
 
@@ -235,7 +234,7 @@ MicrorosSync& MicrorosSync::getInstance() {
 }
 
 bool MicrorosSync::init() {
-    if (g_mutex) return true; // already initialised
+    if (g_mutex) return true;
     g_mutex = xSemaphoreCreateMutex();
     sensor_msgs__msg__CompressedImage__init(&g_img_msg);
     static char fmt[] = "jpeg";
@@ -254,36 +253,54 @@ void MicrorosSync::start() {
     ESP_LOGI(TAG, "Task started");
 }
 
+// ---------------------------------------------------------------------------
+// publishCompressedImage with full JPEG validation
+// ---------------------------------------------------------------------------
 void MicrorosSync::publishCompressedImage(const uint8_t* buf, size_t len, uint32_t seq) {
-  if (!g_mutex) return;
-  if (xSemaphoreTake(g_mutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
+    // ----- JPEG INTEGRITY CHECKS -----
+    if (len < 100) {
+        ESP_LOGE(TAG, "Frame too small: %zu bytes (discarded)", len);
+        return;
+    }
+    if (buf[0] != 0xFF || buf[1] != 0xD8) {
+        ESP_LOGE(TAG, "Invalid JPEG header: 0x%02X 0x%02X (discarded)", buf[0], buf[1]);
+        return;
+    }
+    // Optional EOI marker check (warn only, do not discard)
+    if (buf[len-2] != 0xFF || buf[len-1] != 0xD9) {
+        ESP_LOGW(TAG, "JPEG missing EOI marker (possible truncation) - len=%zu", len);
+    }
+    // ---------------------------------
 
-  if (!g_entities_created) {
+    if (!g_mutex) return;
+    if (xSemaphoreTake(g_mutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
+
+    if (!g_entities_created) {
+        xSemaphoreGive(g_mutex);
+        return;
+    }
+
+    if (!alloc_image_buf(len)) {
+        xSemaphoreGive(g_mutex);
+        return;
+    }
+
+    memcpy(g_img_buf, buf, len);
+    g_img_msg.data.data     = g_img_buf;
+    g_img_msg.data.size     = len;
+    g_img_msg.data.capacity = g_img_buf_capacity;
+
+    int64_t now_us = esp_timer_get_time();
+    g_img_msg.header.stamp.sec     = static_cast<int32_t>(now_us / 1000000);
+    g_img_msg.header.stamp.nanosec = static_cast<uint32_t>((now_us % 1000000) * 1000);
+
+    static char frame_id[] = "camera_link_optical_frame";
+    g_img_msg.header.frame_id.data     = frame_id;
+    g_img_msg.header.frame_id.size     = sizeof(frame_id) - 1;
+    g_img_msg.header.frame_id.capacity = sizeof(frame_id);
+
+    (void)seq;
+
+    ROS_CHECK(rcl_publish(&g_publisher, &g_img_msg, NULL), "image publish");
     xSemaphoreGive(g_mutex);
-    return;
-  }
-
-  if (!alloc_image_buf(len)) {
-    xSemaphoreGive(g_mutex);
-    return;
-  }
-
-  memcpy(g_img_buf, buf, len);
-  g_img_msg.data.data     = g_img_buf;
-  g_img_msg.data.size     = len;
-  g_img_msg.data.capacity = g_img_buf_capacity;
-
-  int64_t now_us = esp_timer_get_time();
-  g_img_msg.header.stamp.sec     = static_cast<int32_t>(now_us / 1000000);
-  g_img_msg.header.stamp.nanosec = static_cast<uint32_t>((now_us % 1000000) * 1000);
-
-  static char frame_id[] = "camera_frame";
-  g_img_msg.header.frame_id.data     = frame_id;
-  g_img_msg.header.frame_id.size     = sizeof(frame_id) - 1;
-  g_img_msg.header.frame_id.capacity = sizeof(frame_id);
-
-  (void)seq;
-
-  ROS_CHECK(rcl_publish(&g_publisher, &g_img_msg, NULL), "image publish");
-  xSemaphoreGive(g_mutex);
 }
