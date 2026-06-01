@@ -16,4 +16,6 @@ idf_component_register(
         microros_sync
         micro_ros_espidf_component
         http_server
+        camera_control
+        state_machine
 )

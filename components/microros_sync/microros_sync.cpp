@@ -6,7 +6,6 @@
 
 static const char* TAG = "MicrorosSync";
 
-// micro-ROS static handles
 static rcl_node_t          node;
 static rcl_publisher_t     publisher;
 static rclc_executor_t     executor;
@@ -14,7 +13,6 @@ static rcl_allocator_t     allocator;
 static rclc_support_t      support;
 static bool                is_initialized = false;
 static TaskHandle_t        spin_task_handle = nullptr;
-
 static sensor_msgs__msg__CompressedImage img_msg;
 
 static void free_image_msg_data() {
@@ -40,11 +38,10 @@ static bool allocate_image_data(size_t required_size) {
     return true;
 }
 
-// mDNS discovery – uses esp_ip4_addr_t (ESP-IDF type)
 static bool discover_agent(const char* hostname, uint32_t timeout_ms) {
     ESP_LOGI(TAG, "mDNS query: %s.local", hostname);
-    esp_ip4_addr_t agent_addr;        // ✅ correct type for mdns_query_a
-    agent_addr.addr = 0;              // clear address
+    esp_ip4_addr_t agent_addr;
+    agent_addr.addr = 0;
     esp_err_t err = mdns_query_a(hostname, timeout_ms, &agent_addr);
     if (err != ESP_OK || agent_addr.addr == 0) {
         ESP_LOGE(TAG, "mDNS failed for %s.local", hostname);
@@ -66,22 +63,33 @@ static bool discover_agent(const char* hostname, uint32_t timeout_ms) {
 
 static bool create_microros_entities() {
     allocator = rcl_get_default_allocator();
-    rclc_support_init(&support, 0, nullptr, &allocator);
-    rclc_node_init_default(&node, "shelfbot_camera", "", &support);
-    if (rcl_node_is_valid(&node) != RCL_RET_OK) {
-        ESP_LOGE(TAG, "Failed to create node");
+    rcl_ret_t ret = rclc_support_init(&support, 0, nullptr, &allocator);
+    if (ret != RCL_RET_OK) {
+        ESP_LOGE(TAG, "rclc_support_init failed: %ld", (long)ret);
+        return false;
+    }
+    ret = rclc_node_init_default(&node, "shelfbot_camera", "", &support);
+    if (ret != RCL_RET_OK) {
+        ESP_LOGE(TAG, "rclc_node_init_default failed: %ld", (long)ret);
         return false;
     }
     const rosidl_message_type_support_t* type_support =
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, CompressedImage);
-    rclc_publisher_init_default(&publisher, &node, type_support, "/camera/compressed");
-    rclc_executor_init(&executor, &support.context, 1, &allocator);
+    ret = rclc_publisher_init_default(&publisher, &node, type_support, "/camera/compressed");
+    if (ret != RCL_RET_OK) {
+        ESP_LOGE(TAG, "rclc_publisher_init_default failed: %ld", (long)ret);
+        return false;
+    }
+    ret = rclc_executor_init(&executor, &support.context, 1, &allocator);
+    if (ret != RCL_RET_OK) {
+        ESP_LOGE(TAG, "rclc_executor_init failed: %ld", (long)ret);
+        return false;
+    }
     ESP_LOGI(TAG, "micro-ROS entities created");
     return true;
 }
 
 static void spin_task(void* arg) {
-    ESP_LOGI(TAG, "Spin task started on core 1");
     while (true) {
         rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -94,10 +102,7 @@ MicrorosSync& MicrorosSync::getInstance() {
 }
 
 bool MicrorosSync::init() {
-    if (is_initialized) {
-        ESP_LOGW(TAG, "Already initialised");
-        return true;
-    }
+    if (is_initialized) return true;
     StateMachine::setInitial("microros", stateToString(MicrorosState::OFF));
     is_initialized = true;
     ESP_LOGI(TAG, "Initialised");
@@ -106,12 +111,11 @@ bool MicrorosSync::init() {
 
 void MicrorosSync::start() {
     if (!is_initialized) {
-        ESP_LOGE(TAG, "Not initialised. Call init() first.");
+        ESP_LOGE(TAG, "Not initialised");
         return;
     }
     EventGroupHandle_t wm_evt = wifi_manager_get_event_group();
     if (wm_evt) {
-        ESP_LOGI(TAG, "Waiting for Wi-Fi...");
         xEventGroupWaitBits(wm_evt, WM_CONNECTED_BIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(30000));
     } else {
         ESP_LOGE(TAG, "Wi-Fi event group not available");
@@ -119,13 +123,12 @@ void MicrorosSync::start() {
         return;
     }
     StateMachine::changeState("microros", stateToString(MicrorosState::DISCOVERING));
-    if (!discover_agent("shelfbot-agent", 5000)) {
-        ESP_LOGE(TAG, "Agent discovery failed");
+    const char* agent_hostname = CONFIG_MICROROS_AGENT_HOSTNAME;
+    if (!discover_agent(agent_hostname, 5000)) {
         StateMachine::changeState("microros", stateToString(MicrorosState::ERROR));
         return;
     }
     if (!create_microros_entities()) {
-        ESP_LOGE(TAG, "Failed to create micro-ROS entities");
         StateMachine::changeState("microros", stateToString(MicrorosState::ERROR));
         return;
     }
@@ -135,10 +138,7 @@ void MicrorosSync::start() {
 }
 
 void MicrorosSync::publishCompressedImage(const uint8_t* buf, size_t len, uint32_t seq) {
-    if (StateMachine::getState("microros") != stateToString(MicrorosState::CONNECTED)) {
-        ESP_LOGD(TAG, "Not connected, skipping publish");
-        return;
-    }
+    if (StateMachine::getState("microros") != stateToString(MicrorosState::CONNECTED)) return;
     if (!is_initialized || !rcl_publisher_is_valid(&publisher)) return;
     if (!allocate_image_data(len)) return;
     memcpy((void*)img_msg.data.data, buf, len);
@@ -148,7 +148,7 @@ void MicrorosSync::publishCompressedImage(const uint8_t* buf, size_t len, uint32
     img_msg.format.capacity = 4;
     rcl_ret_t ret = rcl_publish(&publisher, &img_msg, NULL);
     if (ret != RCL_RET_OK) {
-        ESP_LOGW(TAG, "Publish failed: %ld", (long)ret);
+        ESP_LOGW(TAG, "rcl_publish failed: %ld", (long)ret);
     } else {
         ESP_LOGD(TAG, "Published image seq=%lu, size=%zu", (unsigned long)seq, len);
     }

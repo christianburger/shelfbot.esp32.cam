@@ -4,83 +4,27 @@
 #include <network_manager.hpp>
 #include <state_machine.hpp>
 #include <state_machine_lifecycle.hpp>
+#include <camera_manager.hpp>
 
 static const char* TAG = "main";
-
-// ---------------------------------------------------------------------------
-// Camera pin map — ESP32-CAM AI-Thinker module
-// ---------------------------------------------------------------------------
-static constexpr int CAM_PIN_PWDN  = 32;
-static constexpr int CAM_PIN_RESET = -1;
-static constexpr int CAM_PIN_XCLK  =  0;
-static constexpr int CAM_PIN_SIOD  = 26;
-static constexpr int CAM_PIN_SIOC  = 27;
-static constexpr int CAM_PIN_D7    = 35;
-static constexpr int CAM_PIN_D6    = 34;
-static constexpr int CAM_PIN_D5    = 39;
-static constexpr int CAM_PIN_D4    = 36;
-static constexpr int CAM_PIN_D3    = 21;
-static constexpr int CAM_PIN_D2    = 19;
-static constexpr int CAM_PIN_D1    = 18;
-static constexpr int CAM_PIN_D0    =  5;
-static constexpr int CAM_PIN_VSYNC = 25;
-static constexpr int CAM_PIN_HREF  = 23;
-static constexpr int CAM_PIN_PCLK  = 22;
-
-static const camera_config_t camera_config = {
-    .pin_pwdn      = CAM_PIN_PWDN,
-    .pin_reset     = CAM_PIN_RESET,
-    .pin_xclk      = CAM_PIN_XCLK,
-    .pin_sccb_sda  = CAM_PIN_SIOD,
-    .pin_sccb_scl  = CAM_PIN_SIOC,
-    .pin_d7        = CAM_PIN_D7,
-    .pin_d6        = CAM_PIN_D6,
-    .pin_d5        = CAM_PIN_D5,
-    .pin_d4        = CAM_PIN_D4,
-    .pin_d3        = CAM_PIN_D3,
-    .pin_d2        = CAM_PIN_D2,
-    .pin_d1        = CAM_PIN_D1,
-    .pin_d0        = CAM_PIN_D0,
-    .pin_vsync     = CAM_PIN_VSYNC,
-    .pin_href      = CAM_PIN_HREF,
-    .pin_pclk      = CAM_PIN_PCLK,
-    .xclk_freq_hz  = 20000000,
-    .ledc_timer    = LEDC_TIMER_0,
-    .ledc_channel  = LEDC_CHANNEL_0,
-    .pixel_format  = PIXFORMAT_JPEG,
-    .frame_size    = FRAMESIZE_SVGA,
-    .jpeg_quality  = 12,
-    .fb_count      = 1,
-    .fb_location   = CAMERA_FB_IN_PSRAM,
-    .grab_mode     = CAMERA_GRAB_WHEN_EMPTY,
-    .sccb_i2c_port = 0,
-};
-
 static QueueHandle_t frame_queue = nullptr;
 
-static void camera_task(void*) {
-    ESP_LOGI(TAG, "Initialising camera...");
-    const esp_err_t err = esp_camera_init(&camera_config);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Camera init failed: 0x%x", err);
-        vTaskDelete(nullptr);
+static void on_camera_frame(const CameraCommon::CameraFrame& frame) {
+    static uint32_t seq = 0;
+    MicrorosSync::publishCompressedImage(frame.buffer, frame.length, seq++);
+
+    CameraCommon::CameraFrame* copy = new CameraCommon::CameraFrame(frame);
+    copy->buffer = new uint8_t[frame.length];
+    if (!copy->buffer) {
+        ESP_LOGE(TAG, "Failed to allocate copy buffer");
+        delete copy;
         return;
     }
-    ESP_LOGI(TAG, "Camera ready");
-    uint32_t seq = 0;
-    while (true) {
-        camera_fb_t* fb = esp_camera_fb_get();
-        if (fb) {
-            ESP_LOGD(TAG, "Frame %lu: %dx%d %zu B",
-                     static_cast<unsigned long>(seq), fb->width, fb->height, fb->len);
-            MicrorosSync::publishCompressedImage(fb->buf, fb->len, seq++);
-            if (xQueueSend(frame_queue, &fb, 0) != pdTRUE) {
-                esp_camera_fb_return(fb);
-            }
-        } else {
-            ESP_LOGE(TAG, "esp_camera_fb_get() failed");
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
+    memcpy(copy->buffer, frame.buffer, frame.length);
+    if (xQueueSend(frame_queue, &copy, 0) != pdTRUE) {
+        ESP_LOGD(TAG, "Frame queue full, discarding frame");
+        delete[] copy->buffer;
+        delete copy;
     }
 }
 
@@ -95,27 +39,40 @@ extern "C" void app_main() {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // ---------- mDNS initialisation and service registration ----------
     ESP_ERROR_CHECK(mdns_init());
     ESP_ERROR_CHECK(mdns_hostname_set("web-cam"));
     ESP_ERROR_CHECK(mdns_instance_name_set("ESP32-CAM HTTP Server"));
     ESP_ERROR_CHECK(mdns_service_add(nullptr, "_http", "_tcp", 80, nullptr, 0));
     ESP_LOGI(TAG, "mDNS initialised: http://web-cam.local");
-    // -----------------------------------------------------------------
 
     StateMachine::init();
     StateMachine::setInitial("shelfbot", stateToString(ShelfbotState::STARTING));
+    StateMachine::setInitial("camera",   stateToString(CameraState::OFF));
+    StateMachine::setInitial("microros", stateToString(MicrorosState::OFF));
+    // IMPORTANT: Do NOT set initial state for "wifi_manager" here.
+    // wifi_manager_init() will register itself after hardware init.
 
-    frame_queue = xQueueCreate(2, sizeof(camera_fb_t*));
+    frame_queue = xQueueCreate(10, sizeof(CameraCommon::CameraFrame*));
     configASSERT(frame_queue);
 
+    // Wi-Fi manager – this will initialise hardware and register its state
     ESP_ERROR_CHECK(wifi_manager_init());
+
     MicrorosSync::getInstance().init();
     MicrorosSync::getInstance().start();
+
+    ESP_ERROR_CHECK(CameraManager::getInstance().initialize());
+    if (!CameraManager::getInstance().waitUntilReady(5000)) {
+        ESP_LOGE(TAG, "Camera not ready after 5 seconds");
+    } else {
+        ESP_LOGI(TAG, "Camera hardware ready");
+    }
+
+    // HTTP server – will wait for Wi-Fi state machine to become CONNECTED
     ESP_ERROR_CHECK(NetworkManager::get_instance().init(frame_queue));
 
-    xTaskCreatePinnedToCore(camera_task, "camera_task", 8192, nullptr,
-                            configMAX_PRIORITIES - 2, nullptr, 0);
+    ESP_LOGI(TAG, "Starting continuous capture");
+    CameraManager::getInstance().startCapture(on_camera_frame);
 
     StateMachine::changeState("shelfbot", stateToString(ShelfbotState::RUNNING));
     ESP_LOGI(TAG, "app_main done — all tasks running");

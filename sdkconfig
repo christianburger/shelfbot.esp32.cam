@@ -404,6 +404,12 @@ CONFIG_WIFI_INTER_CYCLE_DELAY_S=10
 # end of Wi-Fi Configuration
 
 #
+# Micro-ROS Configuration
+#
+CONFIG_MICROROS_AGENT_HOSTNAME="chris-laptop"
+# end of Micro-ROS Configuration
+
+#
 # micro-ROS Settings
 #
 CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE=y
@@ -420,7 +426,7 @@ CONFIG_ESP_WIFI_PASSWORD="mypassword"
 CONFIG_ESP_MAXIMUM_RETRY=5
 # end of WiFi Configuration
 
-CONFIG_MICRO_ROS_AGENT_IP="192.168.1.100"
+CONFIG_MICRO_ROS_AGENT_IP="chris-laptop"
 CONFIG_MICRO_ROS_AGENT_PORT="8888"
 # end of micro-ROS Settings
 

@@ -1,4 +1,6 @@
 #include <wifi_manager.hpp>
+#include <state_machine.hpp>
+#include <state_machine_lifecycle.hpp>
 
 static auto TAG = "wifi_manager";
 
@@ -137,7 +139,7 @@ static void publish_info(const char *ssid, int8_t rssi, bool degraded) {
 }
 
 // ---------------------------------------------------------------------------
-// Wi-Fi event handlers
+// Wi-Fi event handlers (also update state machine)
 // ---------------------------------------------------------------------------
 static void on_wifi_event(void *arg, esp_event_base_t base,
                           int32_t id, const void *data) {
@@ -147,6 +149,7 @@ static void on_wifi_event(void *arg, esp_event_base_t base,
         xEventGroupClearBits(s_evt, WM_CONNECTED_BIT);
         xEventGroupSetBits(s_evt, WM_DISCONNECTED_BIT | EVT_DISCONNECTED);
         set_wifi_state(WM_STATE_SCANNING);
+        StateMachine::changeState("wifi_manager", stateToString(WifiManagerState::DISCONNECTED));
     }
 }
 
@@ -158,6 +161,7 @@ static void on_ip_event(void *arg, esp_event_base_t base,
         xEventGroupClearBits(s_evt, WM_DISCONNECTED_BIT | EVT_DISCONNECTED);
         xEventGroupSetBits(s_evt, WM_CONNECTED_BIT | EVT_GOT_IP);
         set_wifi_state(WM_STATE_CONNECTED);
+        StateMachine::changeState("wifi_manager", stateToString(WifiManagerState::CONNECTED));
     }
 }
 
@@ -181,7 +185,6 @@ static int scan_pick_best() {
     esp_wifi_scan_get_ap_records(&count, aps);
     ESP_LOGI(TAG, "scan: %u APs found", (unsigned)count);
 
-    // Print ALL APs found (new requirement)
     for (uint16_t i = 0; i < count; i++) {
         ESP_LOGI(TAG, "  AP[%u] SSID: %-32s RSSI: %3d dBm  Channel: %2u  Auth: %d",
                  i,
@@ -265,6 +268,7 @@ static bool monitor_rssi() {
         skip_scan = false;
 
         set_wifi_state(WM_STATE_CONNECTING); bool connected = false; s_reconnects++;
+        StateMachine::changeState("wifi_manager", stateToString(WifiManagerState::CONNECTING));
         for (int attempt = 1; attempt <= RETRIES_PER_NET && !connected; attempt++) {
             disconnect_blocking();
             if (start_connect(ci) != ESP_OK) { vTaskDelay(pdMS_TO_TICKS(2000)); continue; }
@@ -272,10 +276,16 @@ static bool monitor_rssi() {
             if (bits & EVT_GOT_IP) connected = true;
             else { ESP_LOGW(TAG, "\"%s\" attempt %d/%d failed", s_creds[ci].ssid, attempt, RETRIES_PER_NET); vTaskDelay(pdMS_TO_TICKS(1500)); }
         }
-        if (!connected) { ESP_LOGW(TAG, "\"%s\" unreachable – rescanning", s_creds[ci].ssid); vTaskDelay(pdMS_TO_TICKS(3000)); continue; }
+        if (!connected) {
+            ESP_LOGW(TAG, "\"%s\" unreachable – rescanning", s_creds[ci].ssid);
+            StateMachine::changeState("wifi_manager", stateToString(WifiManagerState::ERROR));
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            continue;
+        }
 
         s_connected_at_us = esp_timer_get_time(); s_degrade_streak = 0;
         publish_info(s_creds[ci].ssid, 0, false);
+        StateMachine::changeState("wifi_manager", stateToString(WifiManagerState::CONNECTED));
         ESP_LOGI(TAG, "connected to \"%s\" (reconnect #%lu)", s_creds[ci].ssid, (unsigned long)s_reconnects);
 
         while (true) {
@@ -295,9 +305,20 @@ static bool monitor_rssi() {
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public API – with simple static guard (state machine is used for state, not init guard)
 // ---------------------------------------------------------------------------
+static bool wifi_initialized = false;
+
 esp_err_t wifi_manager_init(void) {
+    if (wifi_initialized) {
+        ESP_LOGW(TAG, "Wi-Fi manager already initialized, skipping");
+        return ESP_OK;
+    }
+    wifi_initialized = true;
+
+    // Register in state machine with initial OFF state (after hardware will be initialised)
+    StateMachine::setInitial("wifi_manager", stateToString(WifiManagerState::OFF));
+
     s_evt = xEventGroupCreate();
     if (!s_evt) return ESP_ERR_NO_MEM;
     xEventGroupSetBits(s_evt, WM_DISCONNECTED_BIT);

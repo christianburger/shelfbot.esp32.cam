@@ -21,6 +21,7 @@ extern "C" {
 #include "esp_psram.h"
 #include "esp_chip_info.h"
 #include "lwip/inet.h"
+#include "sdkconfig.h"
 
 // NVS
 #include "nvs_flash.h"

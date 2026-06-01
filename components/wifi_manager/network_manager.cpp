@@ -1,8 +1,9 @@
 #include <network_manager.hpp>
 #include <controller.hpp>
 #include <wifi_manager.hpp>
+#include <state_machine.hpp>
+#include <state_machine_lifecycle.hpp>
 
-// Definition of the class static member
 const char* NetworkManager::TAG = "NetworkManager";
 
 // ---------------------------------------------------------------------------
@@ -35,7 +36,6 @@ esp_err_t NetworkManager::start_http_server(QueueHandle_t frame_queue) {
         return err;
     }
 
-    // Register all URI handlers from the Controller
     const httpd_uri_t routes[] = {
         { .uri = "/",         .method = HTTP_GET, .handler = Controller::root_handler,          .user_ctx = nullptr },
         { .uri = "/capture",  .method = HTTP_GET, .handler = Controller::capture_handler,       .user_ctx = nullptr },
@@ -57,20 +57,19 @@ esp_err_t NetworkManager::start_http_server(QueueHandle_t frame_queue) {
 esp_err_t NetworkManager::init(QueueHandle_t frame_queue) {
     ESP_LOGI(TAG, "Initialising network manager");
 
-    // Wait for Wi-Fi to be connected (wifi_manager handles connection)
-    EventGroupHandle_t wm_evt = wifi_manager_get_event_group();
-    if (wm_evt) {
-        ESP_LOGI(TAG, "Waiting for Wi-Fi connection...");
-        EventBits_t bits = xEventGroupWaitBits(wm_evt, WM_CONNECTED_BIT,
-                                               pdFALSE, pdTRUE,
-                                               pdMS_TO_TICKS(30000));
-        if (!(bits & WM_CONNECTED_BIT)) {
-            ESP_LOGW(TAG, "Wi-Fi not connected after 30s – starting HTTP server anyway");
-        } else {
-            ESP_LOGI(TAG, "Wi-Fi connected");
+    // Wait for Wi‑Fi to be connected using the state machine
+    ESP_LOGI(TAG, "Waiting for Wi-Fi connection (state machine) ...");
+    while (true) {
+        std::string wifi_state = StateMachine::getState("wifi_manager");
+        if (wifi_state == stateToString(WifiManagerState::CONNECTED)) {
+            ESP_LOGI(TAG, "Wi-Fi is connected");
+            break;
         }
-    } else {
-        ESP_LOGW(TAG, "No Wi-Fi event group found – starting HTTP server without waiting");
+        if (wifi_state == stateToString(WifiManagerState::ERROR) ||
+            wifi_state == stateToString(WifiManagerState::OFF)) {
+            ESP_LOGW(TAG, "Wi-Fi in error/off state, waiting anyway...");
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 
     return start_http_server(frame_queue);

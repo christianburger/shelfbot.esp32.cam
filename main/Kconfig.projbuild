@@ -84,3 +84,12 @@ menu "Wi-Fi Configuration"
             How long to wait when no known AP is found before scanning again.
 
 endmenu
+menu "Micro-ROS Configuration"
+    config MICROROS_AGENT_HOSTNAME
+        string "micro-ROS Agent mDNS hostname"
+        default "shelfbot-agent"
+        help
+            The hostname to use for mDNS discovery of the micro-ROS agent.
+            The actual mDNS query will append ".local" automatically.
+            Example: if you set "my-agent", the ESP32 will query "my-agent.local".
+endmenu
