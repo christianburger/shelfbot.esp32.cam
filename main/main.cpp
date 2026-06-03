@@ -6,7 +6,7 @@
 #include <state_machine_lifecycle.hpp>
 #include <camera_manager.hpp>
 #include <shelfbot_timestamp.hpp>
-#include <sntp_sync.hpp>
+#include <firmware_version.hpp>
 
 static const char* TAG = "main";
 static QueueHandle_t frame_queue = nullptr;
@@ -60,6 +60,10 @@ static void wait_for_microros_time_sync() {
 // ---------------------------------------------------------------------------
 
 extern "C" void app_main() {
+    // Print firmware version as the very first log line so every boot is
+    // immediately identifiable in the serial monitor / log files.
+    FirmwareVersion::print_version(TAG);
+
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -76,35 +80,37 @@ extern "C" void app_main() {
     ESP_ERROR_CHECK(mdns_service_add(nullptr, "_http", "_tcp", 80, nullptr, 0));
     ESP_LOGI(TAG, "mDNS initialised: http://web-cam.local");
 
-    // Early clock check — expected to fail on cold boot (no battery-backed RTC)
+    // Early clock check — expected to fail on cold boot (no battery-backed RTC).
     if (!shelfbot::ShelfbotTimestamp::isEpochValid()) {
         ESP_LOGW(TAG, "Clock not synchronized — epoch invalid at startup (expected)");
     }
 
+    // -----------------------------------------------------------------------
+    // State machine: init the framework, then register only the modules that
+    // main.cpp owns.  Every other module registers itself inside its own
+    // component's init function:
+    //   "camera"       → CameraControl constructor   (camera_control component)
+    //   "microros"     → MicrorosSync::init()        (microros_sync component)
+    //   "wifi_manager" → wifi_manager_init()         (wifi_manager component)
+    // -----------------------------------------------------------------------
     StateMachine::init();
     StateMachine::setInitial("shelfbot", stateToString(ShelfbotState::STARTING));
-    StateMachine::setInitial("camera",   stateToString(CameraState::OFF));
-    StateMachine::setInitial("microros", stateToString(MicrorosState::OFF));
 
     frame_queue = xQueueCreate(10, sizeof(CameraCommon::CameraFrame*));
     configASSERT(frame_queue);
 
-    // Wi-Fi first — SNTP needs a route to the internet
+    // Wi-Fi init also:
+    //  • registers "wifi_manager" in the state machine
+    //  • prints the firmware version to its own log tag
+    //  • starts SNTP automatically on the on_ip_event callback
     ESP_ERROR_CHECK(wifi_manager_init());
 
-    // Block until IP is obtained, then start SNTP immediately so it runs in
-    // parallel with micro-ROS discovery and has maximum time to settle before
-    // the sync_time() poll loop in microros_sync begins.
-    {
-        ESP_LOGI(TAG, "Waiting for IP before starting SNTP...");
-        EventGroupHandle_t wifi_evt = wifi_manager_get_event_group();
-        xEventGroupWaitBits(wifi_evt, WM_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
-        SntpSync::start();
-    }
-
+    // MicrorosSync::init() registers "microros" in the state machine.
     MicrorosSync::getInstance().init();
     MicrorosSync::getInstance().start();
 
+    // CameraManager::initialize() creates CameraControl, whose constructor
+    // registers "camera" in the state machine.
     ESP_ERROR_CHECK(CameraManager::getInstance().initialize());
     if (!CameraManager::getInstance().waitUntilReady(5000)) {
         ESP_LOGE(TAG, "Camera not ready after 5 seconds");
@@ -112,7 +118,7 @@ extern "C" void app_main() {
         ESP_LOGI(TAG, "Camera hardware ready");
     }
 
-    // HTTP server — waits internally for wifi_manager state == CONNECTED
+    // HTTP server — waits internally for wifi_manager state == CONNECTED.
     ESP_ERROR_CHECK(NetworkManager::get_instance().init(frame_queue));
 
     // Wait for micro-ROS time sync before starting capture so the first

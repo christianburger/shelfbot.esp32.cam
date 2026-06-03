@@ -3,6 +3,10 @@
 const char* CameraControl::TAG = "CameraControl";
 
 CameraControl::CameraControl(const CameraControlConfig& config) : config_(config) {
+    // Register this module with the state machine here so ownership is
+    // fully inside the camera_control component, not in main.cpp.
+    StateMachine::setInitial("camera", stateToString(CameraState::OFF));
+
     auto driver = create_esp32_camera_driver();
     sensor_ = std::make_unique<CameraSensor>(std::move(driver));
 }

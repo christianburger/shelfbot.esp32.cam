@@ -18,5 +18,5 @@ idf_component_register(
         http_server
         camera_control
         state_machine
-        sntp_sync
+        firmware_version
 )

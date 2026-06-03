@@ -1,6 +1,8 @@
 #include <wifi_manager.hpp>
 #include <state_machine.hpp>
 #include <state_machine_lifecycle.hpp>
+#include <firmware_version.hpp>
+#include <sntp_sync.hpp>
 
 static auto TAG = "wifi_manager";
 
@@ -139,7 +141,7 @@ static void publish_info(const char *ssid, int8_t rssi, bool degraded) {
 }
 
 // ---------------------------------------------------------------------------
-// Wi-Fi event handlers (also update state machine)
+// Wi-Fi event handlers
 // ---------------------------------------------------------------------------
 static void on_wifi_event(void *arg, esp_event_base_t base,
                           int32_t id, const void *data) {
@@ -162,6 +164,11 @@ static void on_ip_event(void *arg, esp_event_base_t base,
         xEventGroupSetBits(s_evt, WM_CONNECTED_BIT | EVT_GOT_IP);
         set_wifi_state(WM_STATE_CONNECTED);
         StateMachine::changeState("wifi_manager", stateToString(WifiManagerState::CONNECTED));
+
+        // Start SNTP here — the IP event fires exactly when we have a route to
+        // the internet.  SntpSync::start() is idempotent so repeated calls
+        // (e.g. after reconnect) are safe.
+        SntpSync::start();
     }
 }
 
@@ -305,7 +312,7 @@ static bool monitor_rssi() {
 }
 
 // ---------------------------------------------------------------------------
-// Public API – with simple static guard (state machine is used for state, not init guard)
+// Public API
 // ---------------------------------------------------------------------------
 static bool wifi_initialized = false;
 
@@ -316,7 +323,12 @@ esp_err_t wifi_manager_init(void) {
     }
     wifi_initialized = true;
 
-    // Register in state machine with initial OFF state (after hardware will be initialised)
+    // Print firmware version from the firmware_version component so the log
+    // always shows the build identity at the point networking comes up.
+    FirmwareVersion::print_version(TAG);
+
+    // Register the wifi_manager module with the state machine.
+    // Ownership of this module lives here, not in main.cpp.
     StateMachine::setInitial("wifi_manager", stateToString(WifiManagerState::OFF));
 
     s_evt = xEventGroupCreate();

@@ -1,13 +1,8 @@
 #pragma once
 
-// Thin wrapper around ESP-IDF's SNTP client.
-// Call sntp_sync_start() once after Wi-Fi connects.
-// isEpochValid() from ShelfbotTimestamp will return true within ~1-2 s.
+// This header is kept only for backward-compatibility of includes within the
+// wifi_manager component.  The canonical implementation lives in the
+// standalone `sntp_sync` component.  Do NOT add declarations here; use
+// components/sntp_sync/include/sntp_sync.hpp directly.
 
-namespace SntpSync {
-
-// Start the SNTP client pointing at pool.ntp.org.
-// Safe to call multiple times — no-ops if already running.
-void start();
-
-} // namespace SntpSync
+#include <sntp_sync.hpp>
