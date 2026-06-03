@@ -7,4 +7,5 @@ idf_component_register(
         wifi_manager
         mdns
         micro_ros_espidf_component
+        shelfbot_timestamp
 )

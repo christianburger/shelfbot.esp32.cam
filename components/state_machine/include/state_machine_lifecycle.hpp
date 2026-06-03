@@ -2,7 +2,19 @@
 #include <idf_c_includes.hpp>
 
 enum class ShelfbotState : uint8_t { STARTING, RUNNING, ERROR, SHUTDOWN, COUNT };
-enum class MicrorosState : uint8_t { OFF, DISCOVERING, CONNECTED, ERROR, DISCONNECTED, COUNT };
+
+// TIME_SYNC sits between DISCOVERING and CONNECTED:
+//   OFF → DISCOVERING → TIME_SYNC → CONNECTED → DISCONNECTED → DISCOVERING …
+enum class MicrorosState : uint8_t {
+    OFF,
+    DISCOVERING,
+    TIME_SYNC,     // agent reachable, waiting for clock sync via rmw_uros_sync_session()
+    CONNECTED,
+    ERROR,
+    DISCONNECTED,
+    COUNT
+};
+
 enum class WifiManagerState : uint8_t { OFF, CONNECTING, CONNECTED, ERROR, DISCONNECTED, COUNT };
 
 inline const char* stateToString(ShelfbotState s) {
@@ -18,6 +30,7 @@ inline const char* stateToString(MicrorosState s) {
     switch(s) {
         case MicrorosState::OFF:          return "off";
         case MicrorosState::DISCOVERING:  return "discovering";
+        case MicrorosState::TIME_SYNC:    return "time_sync";
         case MicrorosState::CONNECTED:    return "connected";
         case MicrorosState::ERROR:        return "error";
         case MicrorosState::DISCONNECTED: return "disconnected";
@@ -42,4 +55,3 @@ constexpr std::array<std::array<bool, static_cast<size_t>(ShelfbotState::COUNT)>
     {{false, false, false, true }},
     {{false, false, false, false}}
 }};
-// (similar for Microros and WifiManager – omitted for brevity, same as before)

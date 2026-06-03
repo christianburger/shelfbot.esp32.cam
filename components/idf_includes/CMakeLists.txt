@@ -20,4 +20,5 @@ idf_component_register(
         json
         micro_ros_espidf_component
         esp32-camera
+        sntp_sync
 )
