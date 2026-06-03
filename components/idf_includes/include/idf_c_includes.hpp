@@ -54,6 +54,8 @@ extern "C" {
 } // extern "C"
 
 // C++ standard library
+
+#include <sys/time.h>
 #include <functional>
 #include <cstdint>
 #include <string>
